@@ -510,6 +510,3 @@ end)
 
 print("AFX Blood Devil GUI loaded successfully.")
 
-
-
-Ito gusto ko gayahin
