@@ -1,4 +1,4 @@
--- AFX BLOOD DEVIL GUI
+-- AFX Alpha For X GUI
 -- Intro + Main Menu | Mobile Friendly
 -- For your own Roblox Studio experience
 -- Place in StarterPlayer > StarterPlayerScripts as a LocalScript
