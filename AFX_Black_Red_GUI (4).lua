@@ -165,7 +165,7 @@ round(header, 10)
 
 addLabel(
     header,
-    "☠  AFX BLOOD DEVIL",
+    "☠  AFX Alpha For X",
     UDim2.new(1, -60, 1, 0),
     UDim2.new(0, 8, 0, 0),
     17,
@@ -434,4 +434,4 @@ task.spawn(function()
     showMain()
 end)
 
-print("AFX Blood Devil GUI loaded.")
+print("AFX Alpha For X GUI loaded.")
