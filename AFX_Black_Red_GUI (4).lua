@@ -1,437 +1,508 @@
--- AFX Alpha For X GUI
--- Intro + Main Menu | Mobile Friendly
--- For your own Roblox Studio experience
--- Place in StarterPlayer > StarterPlayerScripts as a LocalScript
+
+--// XINN SCRIPT + ESP + AIM TARGET SELECTION
+--// For your own Roblox Studio experience
+--// Place inside StarterPlayer > StarterPlayerScripts
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
 
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local LP = Players.LocalPlayer
+local PG = LP:WaitForChild("PlayerGui")
+local Camera = workspace.CurrentCamera
 
--- Colors
-local RED = Color3.fromRGB(255, 35, 55)
-local DARK = Color3.fromRGB(12, 7, 10)
-local PANEL = Color3.fromRGB(28, 15, 20)
-local WHITE = Color3.fromRGB(245, 240, 245)
-local MUTED = Color3.fromRGB(165, 155, 165)
+local Settings = {
+    ESP = true,
+    Name = true,
+    Health = true,
+    Distance = true,
+    Highlight = true,
+    Box = true,
+    HeadDot = true,
 
--- Remove old copy
-local oldGui = playerGui:FindFirstChild("AFXScriptGUI")
-if oldGui then
-    oldGui:Destroy()
+    AimEnabled = false,
+    TeamCheck = false,
+    FOVVisible = true,
+    FOVRadius = 130,
+    TargetPart = "Head"
+}
+
+local ESPObjects = {}
+local CurrentTarget = nil
+
+--// REMOVE OLD GUI
+local old = PG:FindFirstChild("XINN_SCRIPT")
+if old then
+    old:Destroy()
 end
 
--- Helpers
-local function make(className, properties, parent)
-    local object = Instance.new(className)
-    for property, value in pairs(properties) do
-        object[property] = value
+--// MAIN GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "XINN_SCRIPT"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.DisplayOrder = 50
+gui.Parent = PG
+
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.fromOffset(350, 430)
+main.Position = UDim2.new(0.5, -175, 0.5, -215)
+main.BackgroundColor3 = Color3.fromRGB(12, 8, 10)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.Parent = gui
+
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
+
+local outline = Instance.new("UIStroke")
+outline.Color = Color3.fromRGB(255, 20, 40)
+outline.Thickness = 2
+outline.Parent = main
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -100, 0, 50)
+title.Position = UDim2.fromOffset(12, 0)
+title.BackgroundTransparency = 1
+title.Text = "XINN SCRIPT"
+title.TextColor3 = Color3.fromRGB(255, 25, 45)
+title.TextSize = 23
+title.Font = Enum.Font.GothamBlack
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = main
+
+local close = Instance.new("TextButton")
+close.Size = UDim2.fromOffset(35, 32)
+close.Position = UDim2.new(1, -43, 0, 8)
+close.BackgroundColor3 = Color3.fromRGB(150, 0, 15)
+close.Text = "X"
+close.TextColor3 = Color3.new(1, 1, 1)
+close.Font = Enum.Font.GothamBold
+close.TextSize = 16
+close.Parent = main
+
+local minimize = Instance.new("TextButton")
+minimize.Size = UDim2.fromOffset(35, 32)
+minimize.Position = UDim2.new(1, -83, 0, 8)
+minimize.BackgroundColor3 = Color3.fromRGB(45, 35, 38)
+minimize.Text = "-"
+minimize.TextColor3 = Color3.new(1, 1, 1)
+minimize.Font = Enum.Font.GothamBold
+minimize.TextSize = 20
+minimize.Parent = main
+
+local content = Instance.new("ScrollingFrame")
+content.Size = UDim2.new(1, -20, 1, -65)
+content.Position = UDim2.fromOffset(10, 55)
+content.BackgroundTransparency = 1
+content.BorderSizePixel = 0
+content.ScrollBarThickness = 4
+content.ScrollBarImageColor3 = Color3.fromRGB(255, 20, 40)
+content.CanvasSize = UDim2.fromOffset(0, 650)
+content.Parent = main
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 6)
+layout.Parent = content
+
+local function makeSection(text)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -5, 0, 30)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(255, 30, 50)
+    label.TextSize = 17
+    label.Font = Enum.Font.GothamBlack
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = content
+end
+
+local function makeToggle(labelText, setting)
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(1, -5, 0, 38)
+    button.BackgroundColor3 = Color3.fromRGB(35, 25, 28)
+    button.TextColor3 = Color3.new(1, 1, 1)
+    button.TextSize = 14
+    button.Font = Enum.Font.GothamBold
+    button.Parent = content
+
+    Instance.new("UICorner", button).CornerRadius = UDim.new(0, 7)
+
+    local function refresh()
+        button.Text = labelText .. " : " ..
+            (Settings[setting] and "ON" or "OFF")
+
+        button.BackgroundColor3 = Settings[setting]
+            and Color3.fromRGB(130, 0, 15)
+            or Color3.fromRGB(35, 25, 28)
     end
-    object.Parent = parent
-    return object
-end
 
-local function round(object, radius)
-    make("UICorner", {
-        CornerRadius = UDim.new(0, radius)
-    }, object)
-end
-
-local function outline(object, color, thickness)
-    make("UIStroke", {
-        Color = color or RED,
-        Thickness = thickness or 1
-    }, object)
-end
-
-local function addLabel(parent, text, size, position, textSize, color)
-    return make("TextLabel", {
-        BackgroundTransparency = 1,
-        Size = size,
-        Position = position,
-        Text = text,
-        TextColor3 = color or WHITE,
-        TextSize = textSize or 14,
-        Font = Enum.Font.GothamBold,
-        TextWrapped = true,
-        TextXAlignment = Enum.TextXAlignment.Center,
-        TextYAlignment = Enum.TextYAlignment.Center
-    }, parent)
-end
-
-local gui = make("ScreenGui", {
-    Name = "AFXScriptGUI",
-    ResetOnSpawn = false,
-    IgnoreGuiInset = true,
-    DisplayOrder = 50
-}, playerGui)
-
--- Intro screen
-local intro = make("Frame", {
-    Size = UDim2.fromScale(1, 1),
-    BackgroundColor3 = DARK,
-    BorderSizePixel = 0
-}, gui)
-
-local introTitle = addLabel(
-    intro,
-    "AFX BLOOD DEVIL",
-    UDim2.new(0.9, 0, 0, 60),
-    UDim2.new(0.05, 0, 0.28, 0),
-    30,
-    RED
-)
-
-addLabel(
-    intro,
-    "WELCOME BACK",
-    UDim2.new(0.9, 0, 0, 30),
-    UDim2.new(0.05, 0, 0.40, 0),
-    15,
-    WHITE
-)
-
-addLabel(
-    intro,
-    player.Name,
-    UDim2.new(0.9, 0, 0, 35),
-    UDim2.new(0.05, 0, 0.46, 0),
-    22,
-    RED
-)
-
-local barBack = make("Frame", {
-    Size = UDim2.new(0.65, 0, 0, 8),
-    Position = UDim2.new(0.175, 0, 0.56, 0),
-    BackgroundColor3 = PANEL,
-    BorderSizePixel = 0
-}, intro)
-round(barBack, 8)
-
-local barFill = make("Frame", {
-    Size = UDim2.new(0, 0, 1, 0),
-    BackgroundColor3 = RED,
-    BorderSizePixel = 0
-}, barBack)
-round(barFill, 8)
-
-local percent = addLabel(
-    intro,
-    "LOADING 0%",
-    UDim2.new(0.9, 0, 0, 25),
-    UDim2.new(0.05, 0, 0.59, 0),
-    13,
-    WHITE
-)
-
-local skip = make("TextButton", {
-    Size = UDim2.new(0, 110, 0, 38),
-    Position = UDim2.new(0.5, -55, 0.69, 0),
-    BackgroundColor3 = RED,
-    Text = "SKIP",
-    TextColor3 = WHITE,
-    TextSize = 15,
-    Font = Enum.Font.GothamBold,
-    Visible = false
-}, intro)
-round(skip, 8)
-
--- Main window
-local main = make("Frame", {
-    Name = "Main",
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    Position = UDim2.fromScale(0.5, 0.5),
-    Size = UDim2.new(0.9, 0, 0.65, 0),
-    BackgroundColor3 = DARK,
-    BorderSizePixel = 0,
-    Visible = false
-}, gui)
-make("UISizeConstraint", {
-    MinSize = Vector2.new(280, 300),
-    MaxSize = Vector2.new(600, 520)
-}, main)
-round(main, 12)
-outline(main, RED, 2)
-
--- Header
-local header = make("Frame", {
-    Size = UDim2.new(1, 0, 0, 48),
-    BackgroundColor3 = Color3.fromRGB(35, 5, 12),
-    BorderSizePixel = 0
-}, main)
-round(header, 10)
-
-addLabel(
-    header,
-    "☠  AFX Alpha For X",
-    UDim2.new(1, -60, 1, 0),
-    UDim2.new(0, 8, 0, 0),
-    17,
-    RED
-)
-
-local closeButton = make("TextButton", {
-    Size = UDim2.new(0, 34, 0, 34),
-    Position = UDim2.new(1, -40, 0, 7),
-    BackgroundColor3 = RED,
-    Text = "X",
-    TextColor3 = WHITE,
-    TextSize = 18,
-    Font = Enum.Font.GothamBold
-}, header)
-round(closeButton, 7)
-
--- Tabs
-local tabs = make("Frame", {
-    Position = UDim2.new(0, 8, 0, 56),
-    Size = UDim2.new(1, -16, 0, 38),
-    BackgroundTransparency = 1
-}, main)
-
-make("UIListLayout", {
-    FillDirection = Enum.FillDirection.Horizontal,
-    HorizontalAlignment = Enum.HorizontalAlignment.Center,
-    Padding = UDim.new(0, 5),
-    SortOrder = Enum.SortOrder.LayoutOrder
-}, tabs)
-
--- Content panel
-local content = make("Frame", {
-    Position = UDim2.new(0, 8, 0, 101),
-    Size = UDim2.new(1, -16, 1, -110),
-    BackgroundColor3 = Color3.fromRGB(18, 10, 14),
-    BorderSizePixel = 0
-}, main)
-round(content, 8)
-outline(content, Color3.fromRGB(100, 15, 30), 1)
-
-local pages = {}
-local buttons = {}
-
-local function makePage(name)
-    local page = make("ScrollingFrame", {
-        Name = name .. "Page",
-        Size = UDim2.new(1, -14, 1, -14),
-        Position = UDim2.new(0, 7, 0, 7),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ScrollBarThickness = 3,
-        ScrollBarImageColor3 = RED,
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        Visible = false
-    }, content)
-
-    make("UIListLayout", {
-        Padding = UDim.new(0, 7),
-        SortOrder = Enum.SortOrder.LayoutOrder
-    }, page)
-
-    pages[name] = page
-    return page
-end
-
-local function heading(page, text)
-    addLabel(
-        page,
-        text,
-        UDim2.new(1, -8, 0, 34),
-        UDim2.new(0, 4, 0, 0),
-        18,
-        RED
-    )
-end
-
-local function info(page, text)
-    local row = make("Frame", {
-        Size = UDim2.new(1, -4, 0, 32),
-        BackgroundColor3 = PANEL,
-        BorderSizePixel = 0
-    }, page)
-    round(row, 6)
-
-    addLabel(
-        row,
-        text,
-        UDim2.new(1, -12, 1, 0),
-        UDim2.new(0, 6, 0, 0),
-        13,
-        WHITE
-    )
-end
-
-local function toggle(page, text)
-    local row = make("Frame", {
-        Size = UDim2.new(1, -4, 0, 40),
-        BackgroundColor3 = PANEL,
-        BorderSizePixel = 0
-    }, page)
-    round(row, 7)
-
-    local textLabel = make("TextLabel", {
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 10, 0, 0),
-        Size = UDim2.new(1, -75, 1, 0),
-        Text = text,
-        TextColor3 = WHITE,
-        TextSize = 13,
-        Font = Enum.Font.Gotham,
-        TextXAlignment = Enum.TextXAlignment.Left
-    }, row)
-
-    local on = false
-    local button = make("TextButton", {
-        Position = UDim2.new(1, -58, 0.5, -12),
-        Size = UDim2.new(0, 48, 0, 24),
-        BackgroundColor3 = Color3.fromRGB(60, 55, 65),
-        Text = "OFF",
-        TextColor3 = WHITE,
-        TextSize = 11,
-        Font = Enum.Font.GothamBold
-    }, row)
-    round(button, 12)
-
-    button.Activated:Connect(function()
-        on = not on
-        button.Text = on and "ON" or "OFF"
-        button.BackgroundColor3 = on
-            and RED
-            or Color3.fromRGB(60, 55, 65)
+    button.MouseButton1Click:Connect(function()
+        Settings[setting] = not Settings[setting]
+        refresh()
     end)
+
+    refresh()
 end
 
-local function actionButton(page, text, callback)
-    local button = make("TextButton", {
-        Size = UDim2.new(1, -4, 0, 40),
-        BackgroundColor3 = Color3.fromRGB(150, 0, 25),
-        Text = text,
-        TextColor3 = WHITE,
-        TextSize = 14,
-        Font = Enum.Font.GothamBold
-    }, page)
-    round(button, 7)
-    outline(button, RED, 1)
-    button.Activated:Connect(callback)
+--// ESP CONTROLS
+makeSection("PLAYER ESP")
+
+makeToggle("MASTER ESP", "ESP")
+makeToggle("NAME ESP", "Name")
+makeToggle("HEALTH ESP", "Health")
+makeToggle("DISTANCE ESP", "Distance")
+makeToggle("HIGHLIGHT", "Highlight")
+makeToggle("BOX ESP", "Box")
+makeToggle("HEAD DOT", "HeadDot")
+
+--// AIM CONTROLS
+makeSection("AIM SETTINGS")
+
+makeToggle("TARGET SELECTION", "AimEnabled")
+makeToggle("TEAM CHECK", "TeamCheck")
+makeToggle("SHOW FOV CIRCLE", "FOVVisible")
+
+local targetPartButton = Instance.new("TextButton")
+targetPartButton.Size = UDim2.new(1, -5, 0, 38)
+targetPartButton.BackgroundColor3 = Color3.fromRGB(35, 25, 28)
+targetPartButton.TextColor3 = Color3.new(1, 1, 1)
+targetPartButton.Font = Enum.Font.GothamBold
+targetPartButton.TextSize = 14
+targetPartButton.Parent = content
+
+local function refreshTargetPart()
+    targetPartButton.Text = "TARGET PART : " .. Settings.TargetPart
 end
 
--- Create tabs and pages
-local tabNames = {"Farming", "Rebirth", "Settings"}
+targetPartButton.MouseButton1Click:Connect(function()
+    Settings.TargetPart =
+        Settings.TargetPart == "Head"
+        and "HumanoidRootPart"
+        or "Head"
 
-for index, name in ipairs(tabNames) do
-    local button = make("TextButton", {
-        Name = name .. "Tab",
-        Size = UDim2.new(1/3, -5, 1, 0),
-        BackgroundColor3 = PANEL,
-        Text = name,
-        TextColor3 = WHITE,
-        TextSize = 12,
-        Font = Enum.Font.GothamBold,
-        LayoutOrder = index
-    }, tabs)
-    round(button, 6)
-
-    local page = makePage(name)
-    buttons[name] = button
-
-    button.Activated:Connect(function()
-        for tabName, tabPage in pairs(pages) do
-            tabPage.Visible = tabName == name
-            buttons[tabName].BackgroundColor3 =
-                tabName == name and RED or PANEL
-        end
-    end)
-end
-
--- Farming page
-local farming = pages.Farming
-heading(farming, "FARMING")
-info(farming, "Player: " .. player.Name)
-info(farming, "Strength: display demo")
-toggle(farming, "Auto Train (visual only)")
-toggle(farming, "Auto Collect (visual only)")
-toggle(farming, "Auto Sell (visual only)")
-toggle(farming, "Auto Lift (visual only)")
-
--- Rebirth page
-local rebirth = pages.Rebirth
-heading(rebirth, "REBIRTH")
-info(rebirth, "Rebirths: display demo")
-toggle(rebirth, "Fast Rebirth (visual only)")
-toggle(rebirth, "Controlled Speed (visual only)")
-actionButton(rebirth, "Rebirth Demo", function()
-    info(rebirth, "Demo button pressed; no rebirth was performed.")
+    refreshTargetPart()
 end)
 
--- Settings page
-local settings = pages.Settings
-heading(settings, "SETTINGS")
-toggle(settings, "Show FPS (visual toggle only)")
-toggle(settings, "Anti AFK (visual toggle only)")
+refreshTargetPart()
 
-local themeButton = make("TextButton", {
-    Size = UDim2.new(1, -4, 0, 38),
-    BackgroundColor3 = RED,
-    Text = "Change Theme: RED / PURPLE",
-    TextColor3 = WHITE,
-    TextSize = 13,
-    Font = Enum.Font.GothamBold
-}, settings)
-round(themeButton, 7)
+local radiusButton = Instance.new("TextButton")
+radiusButton.Size = UDim2.new(1, -5, 0, 38)
+radiusButton.BackgroundColor3 = Color3.fromRGB(35, 25, 28)
+radiusButton.TextColor3 = Color3.new(1, 1, 1)
+radiusButton.Font = Enum.Font.GothamBold
+radiusButton.TextSize = 14
+radiusButton.Parent = content
 
-local purple = false
-themeButton.Activated:Connect(function()
-    purple = not purple
-    local accent = purple
-        and Color3.fromRGB(160, 70, 255)
-        or RED
+local function refreshRadius()
+    radiusButton.Text = "FOV SIZE : " .. Settings.FOVRadius
+end
 
-    themeButton.BackgroundColor3 = accent
-    for _, object in ipairs(gui:GetDescendants()) do
-        if object:IsA("UIStroke") then
-            object.Color = accent
-        elseif object:IsA("TextButton") then
-            if object.Text == "Farming"
-                or object.Text == "Rebirth"
-                or object.Text == "Settings" then
-                object.BackgroundColor3 = PANEL
+radiusButton.MouseButton1Click:Connect(function()
+    Settings.FOVRadius += 20
+    if Settings.FOVRadius > 250 then
+        Settings.FOVRadius = 70
+    end
+    refreshRadius()
+end)
+
+refreshRadius()
+
+--// FOV CIRCLE
+local fov = Instance.new("Frame")
+fov.Name = "FOVCircle"
+fov.AnchorPoint = Vector2.new(0.5, 0.5)
+fov.Size = UDim2.fromOffset(
+    Settings.FOVRadius * 2,
+    Settings.FOVRadius * 2
+)
+fov.BackgroundTransparency = 1
+fov.Visible = Settings.FOVVisible
+fov.Parent = gui
+
+Instance.new("UICorner", fov).CornerRadius = UDim.new(1, 0)
+
+local fovStroke = Instance.new("UIStroke")
+fovStroke.Color = Color3.fromRGB(255, 20, 40)
+fovStroke.Thickness = 2
+fovStroke.Parent = fov
+
+--// TARGET DISPLAY
+local targetLabel = Instance.new("TextLabel")
+targetLabel.Size = UDim2.fromOffset(230, 30)
+targetLabel.Position = UDim2.new(0, 10, 1, -40)
+targetLabel.BackgroundColor3 = Color3.fromRGB(15, 10, 12)
+targetLabel.TextColor3 = Color3.fromRGB(255, 30, 45)
+targetLabel.Text = "TARGET: NONE"
+targetLabel.TextSize = 13
+targetLabel.Font = Enum.Font.GothamBold
+targetLabel.Parent = gui
+
+--// ESP CLEANUP
+local function removeESP(player)
+    local data = ESPObjects[player]
+    if not data then return end
+
+    for _, object in pairs(data) do
+        if typeof(object) == "Instance" then
+            object:Destroy()
+        end
+    end
+
+    ESPObjects[player] = nil
+end
+
+--// CREATE PLAYER ESP
+local function addESP(player, character)
+    if player == LP then return end
+
+    removeESP(player)
+
+    local humanoid = character:WaitForChild("Humanoid", 5)
+    local head = character:WaitForChild("Head", 5)
+
+    if not humanoid or not head then return end
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "XINN_Highlight"
+    highlight.Adornee = character
+    highlight.FillColor = Color3.fromRGB(255, 0, 20)
+    highlight.OutlineColor = Color3.new(1, 1, 1)
+    highlight.FillTransparency = 0.55
+    highlight.Parent = character
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "XINN_Info"
+    billboard.Size = UDim2.fromOffset(230, 40)
+    billboard.Adornee = head
+    billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = PG
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.fromScale(1, 1)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.new(1, 1, 1)
+    label.TextStrokeTransparency = 0
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 13
+    label.Parent = billboard
+
+    local box = Instance.new("SelectionBox")
+    box.Name = "XINN_Box"
+    box.Adornee = character
+    box.Color3 = Color3.fromRGB(255, 0, 20)
+    box.LineThickness = 0.04
+    box.Parent = character
+
+    local dot = Instance.new("BillboardGui")
+    dot.Name = "XINN_HeadDot"
+    dot.Size = UDim2.fromOffset(10, 10)
+    dot.Adornee = head
+    dot.AlwaysOnTop = true
+    dot.Parent = PG
+
+    local dotFrame = Instance.new("Frame")
+    dotFrame.Size = UDim2.fromScale(1, 1)
+    dotFrame.BackgroundColor3 = Color3.fromRGB(255, 0, 20)
+    dotFrame.Parent = dot
+
+    Instance.new("UICorner", dotFrame).CornerRadius = UDim.new(1, 0)
+
+    ESPObjects[player] = {
+        Highlight = highlight,
+        Billboard = billboard,
+        Label = label,
+        Box = box,
+        Dot = dot,
+        Character = character
+    }
+end
+
+--// PLAYER SETUP
+local function setupPlayer(player)
+    if player == LP then return end
+
+    player.CharacterAdded:Connect(function(character)
+        addESP(player, character)
+    end)
+
+    player.CharacterRemoving:Connect(function()
+        removeESP(player)
+    end)
+
+    if player.Character then
+        task.spawn(addESP, player, player.Character)
+    end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    setupPlayer(player)
+end
+
+Players.PlayerAdded:Connect(setupPlayer)
+Players.PlayerRemoving:Connect(removeESP)
+
+--// FIND CLOSEST TARGET INSIDE FOV
+local function getClosestTarget()
+    local closest = nil
+    local shortest = Settings.FOVRadius
+    local mousePosition = UIS:GetMouseLocation()
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LP then
+            local character = player.Character
+            local humanoid = character
+                and character:FindFirstChildOfClass("Humanoid")
+
+            local sameTeam = Settings.TeamCheck
+                and LP.Team ~= nil
+                and player.Team == LP.Team
+
+            if character and humanoid
+                and humanoid.Health > 0
+                and not sameTeam then
+
+                local part = character:FindFirstChild(Settings.TargetPart)
+                    or character:FindFirstChild("HumanoidRootPart")
+
+                if part then
+                    local screenPosition, onScreen =
+                        Camera:WorldToViewportPoint(part.Position)
+
+                    if onScreen and screenPosition.Z > 0 then
+                        local point = Vector2.new(
+                            screenPosition.X,
+                            screenPosition.Y
+                        )
+
+                        local distance = (mousePosition - point).Magnitude
+
+                        if distance < shortest then
+                            shortest = distance
+                            closest = player
+                        end
+                    end
+                end
             end
         end
     end
-end)
 
--- Open/close
-closeButton.Activated:Connect(function()
-    main.Visible = false
-end)
-
--- Intro progress and skip
-local finished = false
-
-local function showMain()
-    if finished then return end
-    finished = true
-    intro.Visible = false
-    main.Visible = true
-    pages.Farming.Visible = true
-    buttons.Farming.BackgroundColor3 = RED
+    return closest
 end
 
-skip.Activated:Connect(showMain)
+--// UPDATE LOOP
+local connection
 
-task.spawn(function()
-    for progress = 1, 100 do
-        if finished then return end
-        barFill.Size = UDim2.new(progress / 100, 0, 1, 0)
-        percent.Text = "LOADING " .. progress .. "%"
-        if progress >= 10 then
-            skip.Visible = true
-        end
-        task.wait(0.025)
+connection = RunService.RenderStepped:Connect(function()
+    if not gui.Parent then
+        connection:Disconnect()
+        return
     end
-    task.wait(0.4)
-    showMain()
+
+    local mousePosition = UIS:GetMouseLocation()
+
+    fov.Position = UDim2.fromOffset(
+        mousePosition.X,
+        mousePosition.Y
+    )
+
+    fov.Size = UDim2.fromOffset(
+        Settings.FOVRadius * 2,
+        Settings.FOVRadius * 2
+    )
+
+    fov.Visible = Settings.FOVVisible
+
+    if Settings.AimEnabled then
+        CurrentTarget = getClosestTarget()
+    else
+        CurrentTarget = nil
+    end
+
+    targetLabel.Text = CurrentTarget
+        and "TARGET: " .. CurrentTarget.Name
+        or "TARGET: NONE"
+
+    for player, data in pairs(ESPObjects) do
+        local character = data.Character
+        local humanoid = character
+            and character:FindFirstChildOfClass("Humanoid")
+        local root = character
+            and character:FindFirstChild("HumanoidRootPart")
+
+        local active = Settings.ESP
+            and character ~= nil
+            and character.Parent ~= nil
+            and humanoid ~= nil
+            and root ~= nil
+            and humanoid.Health > 0
+
+        data.Highlight.Enabled = active and Settings.Highlight or false
+
+        data.Billboard.Enabled = active
+            and (Settings.Name or Settings.Health or Settings.Distance)
+            or false
+
+        data.Box.Visible = active and Settings.Box or false
+        data.Dot.Enabled = active and Settings.HeadDot or false
+
+        if active then
+            local info = {}
+
+            if Settings.Name then
+                table.insert(info, player.Name)
+            end
+
+            if Settings.Health then
+                table.insert(
+                    info,
+                    "HP: " .. math.floor(humanoid.Health)
+                )
+            end
+
+            if Settings.Distance then
+                local myCharacter = LP.Character
+                local myRoot = myCharacter
+                    and myCharacter:FindFirstChild("HumanoidRootPart")
+
+                if myRoot then
+                    local distance = math.floor(
+                        (root.Position - myRoot.Position).Magnitude
+                    )
+                    table.insert(info, distance .. " studs")
+                end
+            end
+
+            data.Label.Text = table.concat(info, " | ")
+        end
+    end
 end)
 
-print("AFX Alpha For X GUI loaded.")
+--// MINIMIZE
+local minimized = false
+
+minimize.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    content.Visible = not minimized
+
+    main.Size = minimized
+        and UDim2.fromOffset(350, 50)
+        or UDim2.fromOffset(350, 430)
+end)
+
+--// CLOSE
+close.MouseButton1Click:Connect(function()
+    if connection then
+        connection:Disconnect()
+    end
+
+    for player in pairs(ESPObjects) do
+        removeESP(player)
+    end
+
+    gui:Destroy()
+end)
+
+print("XINN SCRIPT loaded successfully!")
