@@ -1,1 +1,149 @@
 
+--// AFX AUTO KILL ALIEN BOSS
+--// TEST VERSION
+--// StarterPlayer > StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local bossName = "Alien Boss"
+
+local autoFollow = false
+local autoPunch = false
+local attackCooldown = 0.35
+local lastAttack = 0
+local attackRange = 10
+
+local function getCharacter()
+	local character = player.Character or player.CharacterAdded:Wait()
+	local humanoid = character:WaitForChild("Humanoid")
+	local root = character:WaitForChild("HumanoidRootPart")
+	return character, humanoid, root
+end
+
+local character, humanoid, root = getCharacter()
+
+player.CharacterAdded:Connect(function()
+	task.wait(1)
+	character, humanoid, root = getCharacter()
+end)
+
+local function getBoss()
+	local boss = workspace:FindFirstChild(bossName, true)
+	if not boss or not boss:IsA("Model") then
+		return nil
+	end
+
+	local bossHumanoid = boss:FindFirstChildOfClass("Humanoid")
+	local bossRoot = boss:FindFirstChild("HumanoidRootPart") or boss.PrimaryPart
+
+	if bossHumanoid and bossRoot and bossHumanoid.Health > 0 then
+		return boss, bossHumanoid, bossRoot
+	end
+
+	return nil
+end
+
+-- GUI
+local old = player.PlayerGui:FindFirstChild("AFX_AutoKill")
+if old then old:Destroy() end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "AFX_AutoKill"
+gui.ResetOnSpawn = false
+gui.Parent = player.PlayerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.fromOffset(270, 205)
+frame.Position = UDim2.new(0.5, -135, 0.5, -102)
+frame.BackgroundColor3 = Color3.fromRGB(15, 10, 14)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+frame.Parent = gui
+
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+
+local outline = Instance.new("UIStroke")
+outline.Color = Color3.fromRGB(255, 25, 45)
+outline.Thickness = 2
+outline.Parent = frame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 40)
+title.BackgroundTransparency = 1
+title.Text = "AFX | ALIEN BOSS"
+title.TextColor3 = Color3.fromRGB(255, 35, 55)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 17
+title.Parent = frame
+
+local function makeButton(text, y)
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(1, -24, 0, 42)
+	button.Position = UDim2.fromOffset(12, y)
+	button.BackgroundColor3 = Color3.fromRGB(105, 10, 25)
+	button.TextColor3 = Color3.new(1, 1, 1)
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 13
+	button.Text = text
+	button.Parent = frame
+
+	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 8)
+	return button
+end
+
+local teleportButton = makeButton("TELEPORT TO ALIEN BOSS", 48)
+local followButton = makeButton("AUTO FOLLOW: OFF", 96)
+local punchButton = makeButton("AUTO PUNCH: OFF", 144)
+
+teleportButton.MouseButton1Click:Connect(function()
+	local boss = getBoss()
+	if not boss then
+		teleportButton.Text = "ALIEN BOSS NOT FOUND"
+		task.wait(2)
+		teleportButton.Text = "TELEPORT TO ALIEN BOSS"
+		return
+	end
+
+	local _, _, bossRoot = getBoss()
+	if root and bossRoot then
+		root.CFrame = bossRoot.CFrame * CFrame.new(0, 0, 5)
+	end
+end)
+
+followButton.MouseButton1Click:Connect(function()
+	autoFollow = not autoFollow
+	followButton.Text = "AUTO FOLLOW: " .. (autoFollow and "ON" or "OFF")
+end)
+
+punchButton.MouseButton1Click:Connect(function()
+	autoPunch = not autoPunch
+	punchButton.Text = "AUTO PUNCH: " .. (autoPunch and "ON" or "OFF")
+end)
+
+RunService.Heartbeat:Connect(function()
+	if not root or not humanoid or humanoid.Health <= 0 then return end
+
+	local boss, bossHumanoid, bossRoot = getBoss()
+	if not boss then return end
+
+	local distance = (root.Position - bossRoot.Position).Magnitude
+
+	if autoFollow and distance > 5 then
+		humanoid:MoveTo(bossRoot.Position - bossRoot.CFrame.LookVector * 5)
+	end
+
+	if autoPunch and distance <= attackRange then
+		if os.clock() - lastAttack >= attackCooldown then
+			lastAttack = os.clock()
+
+			-- PLACEHOLDER:
+			-- Connect your game's actual punch input/damage system here.
+			-- A LocalScript cannot safely lower server-owned boss health.
+		end
+	end
+end)
+
+print("AFX AUTO KILL ALIEN BOSS TEST LOADED")
