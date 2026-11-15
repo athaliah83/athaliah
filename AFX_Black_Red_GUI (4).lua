@@ -1,1244 +1,472 @@
---// AFX EGG + CHICKEN + GARDEN + SELL SYSTEM
---// LOCATION: ServerScriptService
---// BLOCKY LAYERED EGGS + BROWN NEST
---// GROUND FIX + SITTING GUARDIAN
---// SELL: COMMON 25 CASH / RARE 100 CASH
---// KEEP EXISTING GARDEN / HATCH / INCOME SYSTEM
+-- init
+if not game:IsLoaded() then 
+    game.Loaded:Wait()
+end
 
+if not syn or not protectgui then
+    getgenv().protectgui = function() end
+end
+
+local SilentAimSettings = {
+    Enabled = false,
+    
+    ClassName = "Universal Silent Aim - Averiias, Stefanuk12, xaxa",
+    ToggleKey = "RightAlt",
+    
+    TeamCheck = false,
+    VisibleCheck = false, 
+    TargetPart = "HumanoidRootPart",
+    SilentAimMethod = "Raycast",
+    
+    FOVRadius = 130,
+    FOVVisible = false,
+    ShowSilentAimTarget = false, 
+    
+    MouseHitPrediction = false,
+    MouseHitPredictionAmount = 0.165,
+    HitChance = 100
+}
+
+-- variables
+getgenv().SilentAimSettings = Settings
+local MainFileName = "UniversalSilentAim"
+local SelectedFile, FileToSave = "", ""
+
+local Camera = workspace.CurrentCamera
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
+local GuiService = game:GetService("GuiService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
 
--- SETTINGS
-local CHICKEN_POSITION = Vector3.new(663.7, 5.126, -34.78)
-local CHICKEN_ROTATION = math.rad(-90)
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
 
-local SAFE_ZONE_POSITION = Vector3.new(773.603, 1.167, -0.561)
-local SAFE_ZONE_SIZE = Vector3.new(142.316, 1, 274.826)
+local GetChildren = game.GetChildren
+local GetPlayers = Players.GetPlayers
+local WorldToScreen = Camera.WorldToScreenPoint
+local WorldToViewportPoint = Camera.WorldToViewportPoint
+local GetPartsObscuringTarget = Camera.GetPartsObscuringTarget
+local FindFirstChild = game.FindFirstChild
+local RenderStepped = RunService.RenderStepped
+local GuiInset = GuiService.GetGuiInset
+local GetMouseLocation = UserInputService.GetMouseLocation
 
-local GUARDIAN_SPEED = 10
-local GUARDIAN_RETURN_SPEED = 7
-local GUARDIAN_EGG_SPEED = 7
-local KILL_DISTANCE = 4.2
+local resume = coroutine.resume 
+local create = coroutine.create
 
-local GARDEN_HALF_X = 10
-local GARDEN_HALF_Z = 13
+local ValidTargetParts = {"Head", "HumanoidRootPart"}
+local PredictionAmount = 0.165
 
-local INCOME_INTERVAL = 2
-local COMMON_INCOME = 200
-local RARE_INCOME = 0
-local MYTHIC_INCOME = 0
+local mouse_box = Drawing.new("Square")
+mouse_box.Visible = true 
+mouse_box.ZIndex = 999 
+mouse_box.Color = Color3.fromRGB(54, 57, 241)
+mouse_box.Thickness = 20 
+mouse_box.Size = Vector2.new(20, 20)
+mouse_box.Filled = true 
 
-local PET_WALK_SPEED = 0.8
-local PECK_INTERVAL_MIN = 9
-local PECK_INTERVAL_MAX = 14
-local PECK_DURATION = 1.1
+local fov_circle = Drawing.new("Circle")
+fov_circle.Thickness = 1
+fov_circle.NumSides = 100
+fov_circle.Radius = 180
+fov_circle.Filled = false
+fov_circle.Visible = false
+fov_circle.ZIndex = 999
+fov_circle.Transparency = 1
+fov_circle.Color = Color3.fromRGB(54, 57, 241)
 
--- SELL SETTINGS
-local SELL_STALL_POSITION = Vector3.new(711.812, 5.492, 42.808)
-local SELL_MAX_DISTANCE = 30
-
-local SELL_PRICES = {
-	Common = 25,
-	Rare = 100,
+local ExpectedArguments = {
+    FindPartOnRayWithIgnoreList = {
+        ArgCountRequired = 3,
+        Args = {
+            "Instance", "Ray", "table", "boolean", "boolean"
+        }
+    },
+    FindPartOnRayWithWhitelist = {
+        ArgCountRequired = 3,
+        Args = {
+            "Instance", "Ray", "table", "boolean"
+        }
+    },
+    FindPartOnRay = {
+        ArgCountRequired = 2,
+        Args = {
+            "Instance", "Ray", "Instance", "boolean", "boolean"
+        }
+    },
+    Raycast = {
+        ArgCountRequired = 3,
+        Args = {
+            "Instance", "Vector3", "Vector3", "RaycastParams"
+        }
+    }
 }
 
-local EGG_INFO = {
-	Common = {
-		HatchTime = 15,
-		Color = Color3.fromRGB(245, 238, 215),
-		Income = COMMON_INCOME,
-	},
-	Rare = {
-		HatchTime = 30,
-		Color = Color3.fromRGB(55, 160, 255),
-		Income = RARE_INCOME,
-	},
-	Mythic = {
-		HatchTime = 45,
-		Color = Color3.fromRGB(175, 65, 255),
-		Income = MYTHIC_INCOME,
-	},
-}
+function CalculateChance(Percentage)
+    -- // Floor the percentage
+    Percentage = math.floor(Percentage)
 
-local EGG_SPAWNS = {
-	{Type = "Common", Position = CHICKEN_POSITION + Vector3.new(5, 0, -7)},
-	{Type = "Rare", Position = CHICKEN_POSITION + Vector3.new(-7, 0, -5)},
-	{Type = "Mythic", Position = CHICKEN_POSITION + Vector3.new(7, 0, 7)},
-}
+    -- // Get the chance
+    local chance = math.floor(Random.new().NextNumber(Random.new(), 0, 1) * 100) / 100
 
--- CLEANUP
-for _, name in ipairs({
-	"AFX_FluffyChicken",
-	"AFX_GuardianEggs",
-	"AFX_GardenEggsPets",
-	"AFX_EggPlacementPads",
-	}) do
-	local old = Workspace:FindFirstChild(name)
-	if old then
-		old:Destroy()
-	end
+    -- // Return
+    return chance <= Percentage / 100
 end
 
-local oldRemote = ReplicatedStorage:FindFirstChild("AFX_EggRemotes")
-if oldRemote then
-	oldRemote:Destroy()
+
+--[[file handling]] do 
+    if not isfolder(MainFileName) then 
+        makefolder(MainFileName);
+    end
+    
+    if not isfolder(string.format("%s/%s", MainFileName, tostring(game.PlaceId))) then 
+        makefolder(string.format("%s/%s", MainFileName, tostring(game.PlaceId)))
+    end
 end
 
-local remotes = Instance.new("Folder")
-remotes.Name = "AFX_EggRemotes"
-remotes.Parent = ReplicatedStorage
-
-local eggAction = Instance.new("RemoteEvent")
-eggAction.Name = "AFX_EggAction"
-eggAction.Parent = remotes
-
-local eggState = Instance.new("RemoteEvent")
-eggState.Name = "AFX_EggState"
-eggState.Parent = remotes
-
--- SELL REMOTES
-local getSellPets = Instance.new("RemoteFunction")
-getSellPets.Name = "AFX_GetSellPets"
-getSellPets.Parent = remotes
-
-local sellPetEvent = Instance.new("RemoteEvent")
-sellPetEvent.Name = "AFX_SellPet"
-sellPetEvent.Parent = remotes
-
-local guardianFolder = Instance.new("Folder")
-guardianFolder.Name = "AFX_FluffyChicken"
-guardianFolder.Parent = Workspace
-
-local runwayEggFolder = Instance.new("Folder")
-runwayEggFolder.Name = "AFX_GuardianEggs"
-runwayEggFolder.Parent = Workspace
-
-local petFolder = Instance.new("Folder")
-petFolder.Name = "AFX_GardenEggsPets"
-petFolder.Parent = Workspace
-
-local padFolder = Instance.new("Folder")
-padFolder.Name = "AFX_EggPlacementPads"
-padFolder.Parent = Workspace
-
--- HELPERS
-local function makePart(parent, name, size, color, cf, shape)
-	local p = Instance.new("Part")
-	p.Name = name
-	p.Size = size
-	p.Color = color
-	p.CFrame = cf
-	p.Anchored = true
-	p.CanCollide = false
-	p.TopSurface = Enum.SurfaceType.Smooth
-	p.BottomSurface = Enum.SurfaceType.Smooth
-	if shape then
-		p.Shape = shape
-	end
-	p.Parent = parent
-	return p
-end
-
-local function addNameTag(part, title, color)
-	local gui = Instance.new("BillboardGui")
-	gui.Name = "AFX_NameTag"
-	gui.Size = UDim2.fromOffset(105, 22)
-	gui.StudsOffset = Vector3.new(0, 1.65, 0)
-	gui.AlwaysOnTop = false
-	gui.MaxDistance = 22
-	gui.LightInfluence = 0
-	gui.Parent = part
-
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.fromScale(1, 1)
-	label.BackgroundTransparency = 1
-	label.Text = title
-	label.TextColor3 = color
-	label.TextStrokeTransparency = 0.4
-	label.Font = Enum.Font.GothamBold
-	label.TextScaled = true
-	label.Parent = gui
-
-	return label
-end
-
-local function getRoot(player)
-	local char = player.Character
-	return char and char:FindFirstChild("HumanoidRootPart")
-end
-
--- GROUND DETECTION
-local function getGroundPosition(position)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-
-	local excluded = {
-		guardianFolder,
-		runwayEggFolder,
-		petFolder,
-		padFolder,
-	}
-
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player.Character then
-			table.insert(excluded, player.Character)
-		end
-	end
-
-	params.FilterDescendantsInstances = excluded
-	params.IgnoreWater = false
-
-	local result = Workspace:Raycast(
-		Vector3.new(position.X, position.Y + 150, position.Z),
-		Vector3.new(0, -500, 0),
-		params
-	)
-
-	if result then
-		return result.Position
-	end
-
-	return Vector3.new(position.X, position.Y, position.Z)
-end
-
-local function snapGuardianToGround(position)
-	local ground = getGroundPosition(position)
-	return Vector3.new(position.X, ground.Y, position.Z)
-end
-
-local function insideSafeZone(position)
-	local p = position - SAFE_ZONE_POSITION
-	return math.abs(p.X) <= SAFE_ZONE_SIZE.X / 2
-		and math.abs(p.Z) <= SAFE_ZONE_SIZE.Z / 2
-end
-
-local function getGarden(player)
-	local number = player:GetAttribute("GardenNumber")
-	if not number then
-		return nil
-	end
-
-	local folder = Workspace:FindFirstChild("AFX_Gardens")
-	if not folder then
-		return nil
-	end
-
-	local garden = folder:FindFirstChild("Garden" .. tostring(number))
-	if not garden then
-		return nil
-	end
-
-	local floor = garden:FindFirstChild("GardenFloor")
-	if not floor or not floor:IsA("BasePart") then
-		return nil
-	end
-
-	return garden, floor
-end
-
-local function getCash(player)
-	local stats = player:FindFirstChild("leaderstats")
-	if not stats then
-		stats = Instance.new("Folder")
-		stats.Name = "leaderstats"
-		stats.Parent = player
-	end
-
-	local cash = stats:FindFirstChild("Cash")
-	if cash and cash:IsA("IntValue") then
-		return cash
-	end
-
-	local money = stats:FindFirstChild("Money")
-	if money and money:IsA("IntValue") then
-		return money
-	end
-
-	cash = Instance.new("IntValue")
-	cash.Name = "Cash"
-	cash.Value = 0
-	cash.Parent = stats
-	return cash
-end
-
-local function gardenPosition(floor, x, z, height)
-	return floor.CFrame:PointToWorldSpace(
-		Vector3.new(x, floor.Size.Y / 2 + (height or 0), z)
-	)
-end
-
--- CHICKEN MODEL
-local function createChicken(parent, name, color, scale, isRare)
-	scale = scale or 1
-
-	local model = Instance.new("Model")
-	model.Name = name
-	model.Parent = parent
-
-	local wingColor = color
-	local beakColor = Color3.fromRGB(255, 145, 25)
-	local combColor = Color3.fromRGB(220, 45, 45)
-
-	if isRare then
-		wingColor = Color3.fromRGB(165, 220, 255)
-		beakColor = Color3.fromRGB(255, 205, 55)
-		combColor = Color3.fromRGB(255, 205, 55)
-	end
-
-	local function part(n, size, offset, partColor, shape)
-		return makePart(
-			model,
-			n,
-			size * scale,
-			partColor,
-			CFrame.new(offset * scale),
-			shape
-		)
-	end
-
-	local data = {
-		Model = model,
-		Scale = scale,
-	}
-
-	data.Body = part("Body", Vector3.new(2, 1.5, 2.5), Vector3.new(0, 1.1, 0), color, Enum.PartType.Ball)
-	data.Head = part("Head", Vector3.new(1.15, 1.1, 1.1), Vector3.new(0, 2.15, -0.8), color, Enum.PartType.Ball)
-	data.Beak = part("Beak", Vector3.new(0.5, 0.3, 0.55), Vector3.new(0, 1.95, -1.42), beakColor, Enum.PartType.Wedge)
-	data.Comb = part("Comb", Vector3.new(0.35, 0.55, 0.3), Vector3.new(0, 2.78, -0.78), combColor, Enum.PartType.Ball)
-	data.EyeL = part("EyeL", Vector3.new(0.13, 0.13, 0.13), Vector3.new(-0.38, 2.28, -1.25), Color3.new(0, 0, 0), Enum.PartType.Ball)
-	data.EyeR = part("EyeR", Vector3.new(0.13, 0.13, 0.13), Vector3.new(0.38, 2.28, -1.25), Color3.new(0, 0, 0), Enum.PartType.Ball)
-	data.WingL = part("WingL", Vector3.new(0.35, 0.8, 1.25), Vector3.new(-1, 1.2, 0.05), wingColor, Enum.PartType.Ball)
-	data.WingR = part("WingR", Vector3.new(0.35, 0.8, 1.25), Vector3.new(1, 1.2, 0.05), wingColor, Enum.PartType.Ball)
-	data.LegL = part("LegL", Vector3.new(0.18, 0.8, 0.18), Vector3.new(-0.4, 0.35, -0.15), Color3.fromRGB(255, 145, 25))
-	data.LegR = part("LegR", Vector3.new(0.18, 0.8, 0.18), Vector3.new(0.4, 0.35, -0.15), Color3.fromRGB(255, 145, 25))
-	data.FootL = part("FootL", Vector3.new(0.55, 0.14, 0.5), Vector3.new(-0.4, 0.04, -0.3), Color3.fromRGB(255, 145, 25))
-	data.FootR = part("FootR", Vector3.new(0.55, 0.14, 0.5), Vector3.new(0.4, 0.04, -0.3), Color3.fromRGB(255, 145, 25))
-
-	model.PrimaryPart = data.Body
-	return data
-end
-
--- CHICKEN ANIMATION
-local function poseChicken(chicken, rootCF, walk, peck, sitting)
-	local s = chicken.Scale
-	local swing = walk * 0.18
-	local bob = math.abs(walk) * 0.025
-	peck = peck or 0
-
-	local function set(part, x, y, z, angle)
-		part.CFrame = rootCF
-			* CFrame.new(x * s, y * s, z * s)
-			* (angle or CFrame.new())
-	end
-
-	if sitting then
-		local breathe = math.sin(os.clock() * 2) * 0.025
-
-		set(chicken.Body, 0, 0.88 + breathe, 0)
-		set(chicken.Head, 0, 1.82 + breathe - peck * 0.25, -0.8 + peck * 0.2)
-		set(chicken.Beak, 0, 1.62 + breathe - peck * 0.4, -1.42 + peck * 0.4)
-		set(chicken.Comb, 0, 2.45 + breathe - peck * 0.25, -0.78 + peck * 0.2)
-		set(chicken.EyeL, -0.38, 1.95 + breathe - peck * 0.25, -1.25 + peck * 0.2)
-		set(chicken.EyeR, 0.38, 1.95 + breathe - peck * 0.25, -1.25 + peck * 0.2)
-		set(chicken.WingL, -0.95, 0.95 + breathe, 0.05)
-		set(chicken.WingR, 0.95, 0.95 + breathe, 0.05)
-		set(chicken.LegL, -0.4, 0.22, -0.15, CFrame.Angles(math.rad(65), 0, 0))
-		set(chicken.LegR, 0.4, 0.22, -0.15, CFrame.Angles(math.rad(65), 0, 0))
-		set(chicken.FootL, -0.4, 0.04, -0.3)
-		set(chicken.FootR, 0.4, 0.04, -0.3)
-		return
-	end
-
-	set(chicken.Body, 0, 1.1 + bob, 0)
-	set(chicken.Head, 0, 2.15 + bob - peck * 0.35, -0.8 + peck * 0.25)
-	set(chicken.Beak, 0, 1.95 + bob - peck * 0.65, -1.42 + peck * 0.55)
-	set(chicken.Comb, 0, 2.78 + bob - peck * 0.35, -0.78 + peck * 0.25)
-	set(chicken.EyeL, -0.38, 2.28 + bob - peck * 0.35, -1.25 + peck * 0.25)
-	set(chicken.EyeR, 0.38, 2.28 + bob - peck * 0.35, -1.25 + peck * 0.25)
-	set(chicken.WingL, -1, 1.2 + bob, 0, CFrame.Angles(0, 0, swing * 0.12))
-	set(chicken.WingR, 1, 1.2 + bob, 0, CFrame.Angles(0, 0, -swing * 0.12))
-	set(chicken.LegL, -0.4, 0.35, -0.15, CFrame.Angles(swing, 0, 0))
-	set(chicken.LegR, 0.4, 0.35, -0.15, CFrame.Angles(-swing, 0, 0))
-	set(chicken.FootL, -0.4, 0.04, -0.3, CFrame.Angles(swing, 0, 0))
-	set(chicken.FootR, 0.4, 0.04, -0.3, CFrame.Angles(-swing, 0, 0))
-end
-
--- GUARDIAN
-local guardian = createChicken(
-	guardianFolder,
-	"GuardianChicken",
-	Color3.fromRGB(245, 242, 230),
-	1.5
-)
-
-addNameTag(guardian.Body, "EGG GUARDIAN", Color3.fromRGB(255, 220, 80))
-
-local guardianHomePosition = snapGuardianToGround(CHICKEN_POSITION)
-local guardianPosition = guardianHomePosition
-local guardianWalkClock = 0
-
--- EGG STATE
-local eggRecords = {}
-local carriedBy
-local carriedEgg
-local carryWeld
-local runningPlayers = {}
-local securedPlayers = {}
-local droppedEgg
-
-local function setEggAnchored(record, anchored)
-	for _, obj in ipairs(record.Model:GetDescendants()) do
-		if obj:IsA("BasePart") then
-			obj.Anchored = anchored
-			obj.CanCollide = false
-		end
-	end
-end
-
-local function updatePlayerEggState()
-	for _, player in ipairs(Players:GetPlayers()) do
-		eggState:FireClient(
-			player,
-			carriedBy == player,
-			carriedBy == player and runningPlayers[player] == true,
-			securedPlayers[player] == true
-		)
-	end
-end
-
-local function restoreEgg(record)
-	if not record or not record.Model or not record.Model.Parent then
-		return
-	end
-
-	if carryWeld then
-		carryWeld:Destroy()
-		carryWeld = nil
-	end
-
-	setEggAnchored(record, true)
-	record.Model.Parent = runwayEggFolder
-	record.Model:PivotTo(record.OriginalCFrame)
-
-	record.Available = true
-	record.Prompt.Enabled = true
-	record.Returning = false
-
-	if droppedEgg == record then
-		droppedEgg = nil
-	end
-
-	if carriedEgg == record then
-		carriedBy = nil
-		carriedEgg = nil
-	end
-
-	if record.Owner then
-		securedPlayers[record.Owner] = nil
-		runningPlayers[record.Owner] = nil
-	end
-
-	updatePlayerEggState()
-end
-
-local function attachEgg(player, record)
-	local character = player.Character
-	if not character then
-		return
-	end
-
-	local hand = character:FindFirstChild("RightHand")
-		or character:FindFirstChild("Right Arm")
-
-	local root = getRoot(player)
-	local attachPart = hand or root
-	if not attachPart then
-		return
-	end
-
-	setEggAnchored(record, false)
-	record.Model:PivotTo(attachPart.CFrame * CFrame.new(0, -0.2, -1.2))
-
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = attachPart
-	weld.Part1 = record.Root
-	weld.Parent = record.Root
-
-	carryWeld = weld
-	carriedBy = player
-	carriedEgg = record
-
-	record.Available = false
-	record.Prompt.Enabled = false
-	record.Owner = player
-
-	securedPlayers[player] = nil
-	runningPlayers[player] = false
-
-	eggState:FireClient(player, true, false, false)
-end
-
--- DROP: GUARDIAN WILL RETRIEVE THE EGG
-local function dropEgg(player)
-	if carriedBy ~= player or not carriedEgg then
-		return
-	end
-
-	if securedPlayers[player] then
-		return
-	end
-
-	local record = carriedEgg
-	local root = getRoot(player)
-
-	if carryWeld then
-		carryWeld:Destroy()
-		carryWeld = nil
-	end
-
-	if root then
-		local dropXZ = root.Position + root.CFrame.LookVector * -4
-		local ground = getGroundPosition(dropXZ)
-		record.Model:PivotTo(CFrame.new(ground + Vector3.new(0, 1.05, 0)))
-	end
-
-	setEggAnchored(record, true)
-	record.Model.Parent = runwayEggFolder
-
-	record.Available = false
-	record.Prompt.Enabled = false
-	record.Returning = true
-	record.Owner = nil
-
-	carriedBy = nil
-	carriedEgg = nil
-	runningPlayers[player] = nil
-	securedPlayers[player] = nil
-
-	droppedEgg = record
-
-	eggState:FireClient(player, false, false, false)
-end
-
--- GARDEN PETS
-local petsByPlayer = {}
-local gardenPads = {}
-local petCounter = 0
-
-local function getPetSlot(player)
-	petsByPlayer[player] = petsByPlayer[player] or {}
-
-	local count = #petsByPlayer[player]
-	local col = count % 4
-	local row = math.floor(count / 4)
-
-	return -7.5 + col * 5, -8 + row * 5
-end
-
-local function chooseGardenPosition(floor, homeX, homeZ)
-	local x = math.clamp(homeX + math.random(-2, 2), -GARDEN_HALF_X, GARDEN_HALF_X)
-	local z = math.clamp(homeZ + math.random(-2, 2), -GARDEN_HALF_Z, GARDEN_HALF_Z)
-	return gardenPosition(floor, x, z, 0.1)
-end
-
-local function createPlacementPad(player, garden, floor)
-	if gardenPads[player] and gardenPads[player].Parent then
-		return
-	end
-
-	local pad = makePart(
-		padFolder,
-		"PlaceEggPad_" .. player.UserId,
-		Vector3.new(4, 0.25, 4),
-		Color3.fromRGB(45, 180, 255),
-		floor.CFrame * CFrame.new(0, floor.Size.Y / 2 + 0.15, 0)
-	)
-
-	pad.Transparency = 0.25
-
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "PLACE EGG"
-	prompt.ObjectText = "YOUR GARDEN"
-	prompt.KeyboardKeyCode = Enum.KeyCode.E
-	prompt.HoldDuration = 0.5
-	prompt.MaxActivationDistance = 10
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = pad
-
-	gardenPads[player] = pad
-
-	prompt.Triggered:Connect(function(triggerPlayer)
-		if triggerPlayer ~= player then
-			return
-		end
-
-		if carriedBy ~= player or not carriedEgg then
-			return
-		end
-
-		local currentGarden, currentFloor = getGarden(player)
-		if currentGarden ~= garden or not currentFloor then
-			return
-		end
-
-		local record = carriedEgg
-		local info = EGG_INFO[record.Type]
-		local slotX, slotZ = getPetSlot(player)
-		local eggPosition = gardenPosition(currentFloor, slotX, slotZ, 1)
-
-		if carryWeld then
-			carryWeld:Destroy()
-			carryWeld = nil
-		end
-
-		record.Model.Parent = petFolder
-		setEggAnchored(record, true)
-		record.Model:PivotTo(CFrame.new(eggPosition))
-		record.Prompt.Enabled = false
-
-		carriedBy = nil
-		carriedEgg = nil
-		runningPlayers[player] = nil
-		securedPlayers[player] = nil
-
-		eggState:FireClient(player, false, false, false)
-
-		local tag = record.Root:FindFirstChild("AFX_NameTag")
-		local label = tag and tag:FindFirstChildOfClass("TextLabel")
-
-		task.spawn(function()
-			for remaining = info.HatchTime, 1, -1 do
-				if not record.Model.Parent then
-					return
-				end
-
-				if label then
-					label.Text = record.Type:upper()
-						.. " HATCHING: " .. remaining .. "s"
-				end
-
-				task.wait(1)
+local Files = listfiles(string.format("%s/%s", "UniversalSilentAim", tostring(game.PlaceId)))
+
+-- functions
+local function GetFiles() -- credits to the linoria lib for this function, listfiles returns the files full path and its annoying
+	local out = {}
+	for i = 1, #Files do
+		local file = Files[i]
+		if file:sub(-4) == '.lua' then
+			-- i hate this but it has to be done ...
+
+			local pos = file:find('.lua', 1, true)
+			local start = pos
+
+			local char = file:sub(pos, pos)
+			while char ~= '/' and char ~= '\\' and char ~= '' do
+				pos = pos - 1
+				char = file:sub(pos, pos)
 			end
 
-			if not record.Model.Parent then
-				return
-			end
-
-			record.Model:Destroy()
-
-			petCounter += 1
-
-			local isRare = record.Type == "Rare"
-			local petName = isRare and "RARE BLUE CHICKEN"
-				or record.Type:upper() .. " CHICKEN"
-
-			local petData = createChicken(
-				petFolder,
-				petName .. "_" .. petCounter,
-				info.Color,
-				0.8,
-				isRare
-			)
-
-			addNameTag(petData.Body, petName, info.Color)
-
-			local initialPosition = gardenPosition(
-				currentFloor,
-				slotX,
-				slotZ,
-				0.1
-			)
-
-			poseChicken(petData, CFrame.new(initialPosition), 0, 0)
-
-			local pet = {
-				Data = petData,
-				Owner = player,
-				HomeX = slotX,
-				HomeZ = slotZ,
-				Target = nil,
-				NextMove = 0,
-				NextPeck = os.clock() + math.random(
-					PECK_INTERVAL_MIN,
-					PECK_INTERVAL_MAX
-				),
-				PeckStart = 0,
-				Income = info.Income,
-				Alive = true,
-			}
-
-			table.insert(petsByPlayer[player], pet)
-
-			task.spawn(function()
-				while pet.Alive and pet.Data.Model.Parent and player.Parent do
-					task.wait(INCOME_INTERVAL)
-
-					if pet.Alive and pet.Data.Model.Parent and pet.Income > 0 then
-						getCash(player).Value += pet.Income
-					end
-				end
-			end)
-		end)
-	end)
-end
-
--- BLOCKY LAYERED EGGS + BROWN NEST
-local function weldEggPart(root, part)
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = root
-	weld.Part1 = part
-	weld.Parent = root
-end
-
-local EGG_STYLE = {
-	Common = {
-		Main = Color3.fromRGB(235, 211, 169),
-		Light = Color3.fromRGB(255, 239, 205),
-		Stripe = Color3.fromRGB(183, 137, 91),
-	},
-	Rare = {
-		Main = Color3.fromRGB(92, 174, 240),
-		Light = Color3.fromRGB(183, 225, 255),
-		Stripe = Color3.fromRGB(48, 111, 190),
-	},
-	Mythic = {
-		Main = Color3.fromRGB(163, 91, 238),
-		Light = Color3.fromRGB(218, 173, 255),
-		Stripe = Color3.fromRGB(104, 48, 166),
-	},
-}
-
-local function createLayeredEgg(spawnInfo)
-	local info = EGG_INFO[spawnInfo.Type]
-	local colors = EGG_STYLE[spawnInfo.Type] or EGG_STYLE.Common
-
-	local model = Instance.new("Model")
-	model.Name = spawnInfo.Type .. "Egg"
-	model.Parent = runwayEggFolder
-
-	local ground = getGroundPosition(spawnInfo.Position)
-	local rootCF = CFrame.new(ground + Vector3.new(0, 1.05, 0))
-
-	local root = makePart(
-		model,
-		"EggRoot",
-		Vector3.new(0.2, 0.2, 0.2),
-		info.Color,
-		rootCF
-	)
-
-	root.Transparency = 1
-	root.CanQuery = false
-	root.CanTouch = false
-	model.PrimaryPart = root
-
-	-- LAYERED EGG BODY
-	local layers = {
-		{Vector3.new(1.15, 0.20, 1.15), -0.12, colors.Stripe},
-		{Vector3.new(1.48, 0.22, 1.48), 0.10, colors.Main},
-		{Vector3.new(1.76, 0.24, 1.76), 0.34, colors.Light},
-		{Vector3.new(1.92, 0.25, 1.92), 0.59, colors.Main},
-		{Vector3.new(1.76, 0.24, 1.76), 0.84, colors.Stripe},
-		{Vector3.new(1.48, 0.23, 1.48), 1.075, colors.Light},
-		{Vector3.new(1.12, 0.22, 1.12), 1.30, colors.Main},
-		{Vector3.new(0.70, 0.18, 0.70), 1.50, colors.Light},
-	}
-
-	for i, layer in ipairs(layers) do
-		local part = makePart(
-			model,
-			"EggLayer" .. i,
-			layer[1],
-			layer[3],
-			rootCF * CFrame.new(0, layer[2], 0)
-		)
-
-		weldEggPart(root, part)
-	end
-
-	-- BROWN TWIG NEST
-	local nestColor = Color3.fromRGB(111, 68, 39)
-	local nestLight = Color3.fromRGB(151, 101, 61)
-
-	local twigs = {
-		{Vector3.new(2.65, 0.16, 0.28), Vector3.new(0, -0.96, 0.98), nestColor, 0},
-		{Vector3.new(2.65, 0.16, 0.28), Vector3.new(0, -0.96, -0.98), nestLight, 0},
-		{Vector3.new(0.28, 0.16, 2.15), Vector3.new(1.18, -0.96, 0), nestLight, 0},
-		{Vector3.new(0.28, 0.16, 2.15), Vector3.new(-1.18, -0.96, 0), nestColor, 0},
-		{Vector3.new(2.45, 0.16, 0.25), Vector3.new(0.10, -0.77, 1.10), nestLight, math.rad(8)},
-		{Vector3.new(2.45, 0.16, 0.25), Vector3.new(-0.10, -0.77, -1.10), nestColor, math.rad(-8)},
-		{Vector3.new(0.25, 0.16, 2.25), Vector3.new(1.30, -0.77, 0.10), nestColor, math.rad(7)},
-		{Vector3.new(0.25, 0.16, 2.25), Vector3.new(-1.30, -0.77, -0.10), nestLight, math.rad(-7)},
-		{Vector3.new(2.20, 0.13, 0.20), Vector3.new(-0.20, -0.58, 1.15), nestColor, math.rad(-10)},
-		{Vector3.new(2.20, 0.13, 0.20), Vector3.new(0.20, -0.58, -1.15), nestLight, math.rad(10)},
-	}
-
-	for i, twig in ipairs(twigs) do
-		local part = makePart(
-			model,
-			"NestTwig" .. i,
-			twig[1],
-			twig[3],
-			rootCF * CFrame.new(twig[2]) * CFrame.Angles(0, twig[4], 0)
-		)
-
-		weldEggPart(root, part)
-	end
-
-	-- PICKUP PROMPT
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.Name = "TakeEggPrompt"
-	prompt.ActionText = "KUNIN"
-	prompt.ObjectText = spawnInfo.Type:upper() .. " EGG"
-	prompt.KeyboardKeyCode = Enum.KeyCode.E
-	prompt.GamepadKeyCode = Enum.KeyCode.ButtonX
-	prompt.HoldDuration = 0.4
-	prompt.MaxActivationDistance = 12
-	prompt.RequiresLineOfSight = false
-	prompt.Enabled = true
-	prompt.Parent = root
-
-	addNameTag(root, spawnInfo.Type:upper() .. " EGG", info.Color)
-
-	local record = {
-		Model = model,
-		Root = root,
-		Prompt = prompt,
-		Type = spawnInfo.Type,
-		OriginalCFrame = model:GetPivot(),
-		Available = true,
-		Returning = false,
-	}
-
-	table.insert(eggRecords, record)
-
-	prompt.Triggered:Connect(function(player)
-		if carriedBy or droppedEgg or not record.Available then
-			return
-		end
-
-		if not getRoot(player) then
-			return
-		end
-
-		attachEgg(player, record)
-	end)
-end
-
--- SPAWN EGGS
-for _, spawnInfo in ipairs(EGG_SPAWNS) do
-	createLayeredEgg(spawnInfo)
-end
-
--- PLAYER GARDEN SETUP
-local function setupPlayer(player)
-	task.spawn(function()
-		for _ = 1, 60 do
-			if not player.Parent then
-				return
-			end
-
-			local garden, floor = getGarden(player)
-			if garden and floor then
-				createPlacementPad(player, garden, floor)
-				return
-			end
-
-			task.wait(1)
-		end
-	end)
-end
-
-Players.PlayerAdded:Connect(setupPlayer)
-
-for _, player in ipairs(Players:GetPlayers()) do
-	setupPlayer(player)
-end
-
--- RUN AND DROP REQUESTS
-eggAction.OnServerEvent:Connect(function(player, action, enabled)
-	if carriedBy ~= player then
-		return
-	end
-
-	if securedPlayers[player] then
-		return
-	end
-
-	if action == "RUN" then
-		runningPlayers[player] = enabled == true
-		eggState:FireClient(player, true, runningPlayers[player], false)
-
-	elseif action == "DROP" then
-		dropEgg(player)
-	end
-end)
-
--- MOVEMENT
-local guardianHitTimes = {}
-
-RunService.Heartbeat:Connect(function(dt)
-	local now = os.clock()
-
-	-- SAFE ZONE DETECTION
-	if carriedBy and carriedBy.Parent and not securedPlayers[carriedBy] then
-		local root = getRoot(carriedBy)
-
-		if root and insideSafeZone(root.Position) then
-			local player = carriedBy
-
-			securedPlayers[player] = true
-			runningPlayers[player] = false
-
-			eggState:FireClient(player, true, false, true)
-		end
-	end
-
-	local targetRoot
-	local targetPlayer
-
-	-- GUARDIAN CHASES ONLY UNSAFE CARRIERS
-	if carriedBy and carriedBy.Parent and not securedPlayers[carriedBy] then
-		local root = getRoot(carriedBy)
-
-		if root then
-			targetRoot = root
-			targetPlayer = carriedBy
-		end
-	end
-
-	local guardianMoving = false
-
-	-- GUARDIAN RETRIEVES DROPPED EGG OR CHASES PLAYER
-	if droppedEgg and droppedEgg.Returning and droppedEgg.Model.Parent then
-		local eggPosition = droppedEgg.Root.Position
-		local flatTarget = Vector3.new(
-			eggPosition.X,
-			guardianPosition.Y,
-			eggPosition.Z
-		)
-
-		local direction = flatTarget - guardianPosition
-		local distance = direction.Magnitude
-
-		if distance > 2.5 then
-			guardianPosition += direction.Unit
-				* math.min(distance, GUARDIAN_EGG_SPEED * dt)
-
-			guardianPosition = snapGuardianToGround(guardianPosition)
-			guardianMoving = true
-		else
-			local record = droppedEgg
-			restoreEgg(record)
-		end
-
-	elseif targetRoot then
-		local flatTarget = Vector3.new(
-			targetRoot.Position.X,
-			guardianPosition.Y,
-			targetRoot.Position.Z
-		)
-
-		local direction = flatTarget - guardianPosition
-		local distance = direction.Magnitude
-
-		if distance > 0.1 then
-			guardianPosition += direction.Unit
-				* math.min(distance, GUARDIAN_SPEED * dt)
-
-			guardianPosition = snapGuardianToGround(guardianPosition)
-			guardianMoving = true
-		end
-
-		if distance <= KILL_DISTANCE
-			and now - (guardianHitTimes[targetPlayer] or 0) > 1 then
-
-			guardianHitTimes[targetPlayer] = now
-
-			local humanoid = targetPlayer.Character
-				and targetPlayer.Character:FindFirstChildOfClass("Humanoid")
-
-			if humanoid then
-				humanoid.Health = 0
-			end
-
-			if carriedBy == targetPlayer and carriedEgg then
-				restoreEgg(carriedEgg)
-			end
-		end
-
-	else
-		local homeTarget = Vector3.new(
-			guardianHomePosition.X,
-			guardianPosition.Y,
-			guardianHomePosition.Z
-		)
-
-		local offset = homeTarget - guardianPosition
-
-		if offset.Magnitude > 0.2 then
-			guardianPosition += offset.Unit
-				* math.min(offset.Magnitude, GUARDIAN_RETURN_SPEED * dt)
-
-			guardianPosition = snapGuardianToGround(guardianPosition)
-			guardianMoving = true
-		else
-			guardianPosition = guardianHomePosition
-		end
-	end
-
-	-- GUARDIAN ANIMATION
-	guardianWalkClock += dt
-
-	local guardianCF = CFrame.new(guardianPosition)
-		* CFrame.Angles(0, CHICKEN_ROTATION, 0)
-
-	poseChicken(
-		guardian,
-		guardianCF,
-		guardianMoving and math.sin(guardianWalkClock * 9) or 0,
-		0,
-		not guardianMoving and not targetRoot and not droppedEgg
-	)
-
-	-- PET CHICKEN WANDERING AND PECKING
-	for player, pets in pairs(petsByPlayer) do
-		local garden, floor = getGarden(player)
-
-		if garden and floor then
-			for _, pet in ipairs(pets) do
-				if pet.Alive and pet.Data.Model.Parent then
-					local currentPosition = pet.Data.Body.Position
-
-					if not pet.Target
-						or (pet.Target - currentPosition).Magnitude < 0.7 then
-
-						if now >= pet.NextMove then
-							pet.Target = chooseGardenPosition(
-								floor,
-								pet.HomeX,
-								pet.HomeZ
-							)
-
-							pet.NextMove = now + math.random(2, 4)
-						end
-					end
-
-					local target = pet.Target or currentPosition
-					local difference = target - currentPosition
-
-					local moving = difference.Magnitude > 0.25
-					local nextPosition = currentPosition
-					local walk = 0
-
-					if moving then
-						nextPosition += difference.Unit
-							* math.min(
-								difference.Magnitude,
-								PET_WALK_SPEED * dt
-							)
-
-						walk = math.sin(now * 4)
-					end
-
-					local localPos = floor.CFrame:PointToObjectSpace(nextPosition)
-
-					local x = math.clamp(
-						localPos.X,
-						-GARDEN_HALF_X,
-						GARDEN_HALF_X
-					)
-
-					local z = math.clamp(
-						localPos.Z,
-						-GARDEN_HALF_Z,
-						GARDEN_HALF_Z
-					)
-
-					nextPosition = gardenPosition(floor, x, z, 0.1)
-
-					local facing = moving and difference.Unit
-						or floor.CFrame.LookVector
-
-					local rootCF = CFrame.lookAt(
-						nextPosition,
-						nextPosition + facing
-					)
-
-					if now >= pet.NextPeck then
-						pet.PeckStart = now
-						pet.NextPeck = now + math.random(
-							PECK_INTERVAL_MIN,
-							PECK_INTERVAL_MAX
-						)
-					end
-
-					local peck = 0
-
-					if pet.PeckStart > 0 then
-						local elapsed = now - pet.PeckStart
-
-						if elapsed < PECK_DURATION then
-							peck = math.sin(
-								(elapsed / PECK_DURATION) * math.pi
-							)
-						else
-							pet.PeckStart = 0
-						end
-					end
-
-					poseChicken(pet.Data, rootCF, walk, peck)
-				end
+			if char == '/' or char == '\\' then
+				table.insert(out, file:sub(pos + 1, start - 1))
 			end
 		end
 	end
-end)
-
--- SELL CHICKEN HELPERS
-local function getSellPetInfo(pet)
-	if not pet or not pet.Alive then
-		return nil
-	end
-
-	if not pet.Data or not pet.Data.Model or not pet.Data.Model.Parent then
-		return nil
-	end
-
-	local modelName = pet.Data.Model.Name
-
-	if string.match(modelName, "^COMMON CHICKEN") then
-		return {
-			Id = modelName,
-			Name = "Common Chicken",
-			Price = SELL_PRICES.Common,
-		}
-	end
-
-	if string.match(modelName, "^RARE BLUE CHICKEN") then
-		return {
-			Id = modelName,
-			Name = "Rare Chicken",
-			Price = SELL_PRICES.Rare,
-		}
-	end
-
-	-- MYTHIC CHICKEN NOT SELLABLE YET
-	return nil
+	
+	return out
 end
 
--- SEND SELLABLE CHICKENS TO CLIENT
-getSellPets.OnServerInvoke = function(player)
-	local result = {}
-	local pets = petsByPlayer[player]
-
-	if not pets then
-		return result
-	end
-
-	for _, pet in ipairs(pets) do
-		local info = getSellPetInfo(pet)
-
-		if info then
-			table.insert(result, info)
-		end
-	end
-
-	return result
+local function UpdateFile(FileName)
+    assert(FileName or FileName == "string", "oopsies");
+    writefile(string.format("%s/%s/%s.lua", MainFileName, tostring(game.PlaceId), FileName), HttpService:JSONEncode(SilentAimSettings))
 end
 
--- SELL CHICKEN REQUEST
-sellPetEvent.OnServerEvent:Connect(function(player, petId)
-	if typeof(petId) ~= "string" or #petId > 100 then
-		sellPetEvent:FireClient(player, "FAILED", "Invalid chicken.")
-		return
-	end
+local function LoadFile(FileName)
+    assert(FileName or FileName == "string", "oopsies");
+    
+    local File = string.format("%s/%s/%s.lua", MainFileName, tostring(game.PlaceId), FileName)
+    local ConfigData = HttpService:JSONDecode(readfile(File))
+    for Index, Value in next, ConfigData do
+        SilentAimSettings[Index] = Value
+    end
+end
 
-	local root = getRoot(player)
+local function getPositionOnScreen(Vector)
+    local Vec3, OnScreen = WorldToScreen(Camera, Vector)
+    return Vector2.new(Vec3.X, Vec3.Y), OnScreen
+end
 
-	if not root then
-		sellPetEvent:FireClient(player, "FAILED", "Character not found.")
-		return
-	end
+local function ValidateArguments(Args, RayMethod)
+    local Matches = 0
+    if #Args < RayMethod.ArgCountRequired then
+        return false
+    end
+    for Pos, Argument in next, Args do
+        if typeof(Argument) == RayMethod.Args[Pos] then
+            Matches = Matches + 1
+        end
+    end
+    return Matches >= RayMethod.ArgCountRequired
+end
 
-	local distance = (root.Position - SELL_STALL_POSITION).Magnitude
+local function getDirection(Origin, Position)
+    return (Position - Origin).Unit * 1000
+end
 
-	if distance > SELL_MAX_DISTANCE then
-		sellPetEvent:FireClient(player, "FAILED", "Pumunta muna sa SELL stall.")
-		return
-	end
+local function getMousePosition()
+    return GetMouseLocation(UserInputService)
+end
 
-	local pets = petsByPlayer[player]
+local function IsPlayerVisible(Player)
+    local PlayerCharacter = Player.Character
+    local LocalPlayerCharacter = LocalPlayer.Character
+    
+    if not (PlayerCharacter or LocalPlayerCharacter) then return end 
+    
+    local PlayerRoot = FindFirstChild(PlayerCharacter, Options.TargetPart.Value) or FindFirstChild(PlayerCharacter, "HumanoidRootPart")
+    
+    if not PlayerRoot then return end 
+    
+    local CastPoints, IgnoreList = {PlayerRoot.Position, LocalPlayerCharacter, PlayerCharacter}, {LocalPlayerCharacter, PlayerCharacter}
+    local ObscuringObjects = #GetPartsObscuringTarget(Camera, CastPoints, IgnoreList)
+    
+    return ((ObscuringObjects == 0 and true) or (ObscuringObjects > 0 and false))
+end
 
-	if not pets then
-		sellPetEvent:FireClient(player, "FAILED", "Wala kang chicken.")
-		return
-	end
+local function getClosestPlayer()
+    if not Options.TargetPart.Value then return end
+    local Closest
+    local DistanceToMouse
+    for _, Player in next, GetPlayers(Players) do
+        if Player == LocalPlayer then continue end
+        if Toggles.TeamCheck.Value and Player.Team == LocalPlayer.Team then continue end
 
-	for index = #pets, 1, -1 do
-		local pet = pets[index]
+        local Character = Player.Character
+        if not Character then continue end
+        
+        if Toggles.VisibleCheck.Value and not IsPlayerVisible(Player) then continue end
 
-		if pet.Alive
-			and pet.Data
-			and pet.Data.Model
-			and pet.Data.Model.Name == petId then
+        local HumanoidRootPart = FindFirstChild(Character, "HumanoidRootPart")
+        local Humanoid = FindFirstChild(Character, "Humanoid")
+        if not HumanoidRootPart or not Humanoid or Humanoid and Humanoid.Health <= 0 then continue end
 
-			local info = getSellPetInfo(pet)
+        local ScreenPosition, OnScreen = getPositionOnScreen(HumanoidRootPart.Position)
+        if not OnScreen then continue end
 
-			if not info then
-				sellPetEvent:FireClient(player, "FAILED", "Hindi puwedeng ibenta ang chicken na ito.")
-				return
-			end
+        local Distance = (getMousePosition() - ScreenPosition).Magnitude
+        if Distance <= (DistanceToMouse or Options.Radius.Value or 2000) then
+            Closest = ((Options.TargetPart.Value == "Random" and Character[ValidTargetParts[math.random(1, #ValidTargetParts)]]) or Character[Options.TargetPart.Value])
+            DistanceToMouse = Distance
+        end
+    end
+    return Closest
+end
 
-			-- REMOVE CHICKEN
-			pet.Alive = false
-			pet.Data.Model:Destroy()
-			table.remove(pets, index)
+-- ui creating & handling
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/Library.lua"))()
+Library:SetWatermark("github.com/Averiias")
 
-			-- GIVE CASH
-			getCash(player).Value += info.Price
+local Window = Library:CreateWindow({Title = 'Universal Silent Aim', Center = true, AutoShow = true, TabPadding = 8, MenuFadeTime = 0.2})
+local GeneralTab = Window:AddTab("General")
+local MainBOX = GeneralTab:AddLeftTabbox("Main") do
+    local Main = MainBOX:AddTab("Main")
+    
+    Main:AddToggle("aim_Enabled", {Text = "Enabled"}):AddKeyPicker("aim_Enabled_KeyPicker", {Default = "RightAlt", SyncToggleState = true, Mode = "Toggle", Text = "Enabled", NoUI = false});
+    Options.aim_Enabled_KeyPicker:OnClick(function()
+        SilentAimSettings.Enabled = not SilentAimSettings.Enabled
+        
+        Toggles.aim_Enabled.Value = SilentAimSettings.Enabled
+        Toggles.aim_Enabled:SetValue(SilentAimSettings.Enabled)
+        
+        mouse_box.Visible = SilentAimSettings.Enabled
+    end)
+    
+    Main:AddToggle("TeamCheck", {Text = "Team Check", Default = SilentAimSettings.TeamCheck}):OnChanged(function()
+        SilentAimSettings.TeamCheck = Toggles.TeamCheck.Value
+    end)
+    Main:AddToggle("VisibleCheck", {Text = "Visible Check", Default = SilentAimSettings.VisibleCheck}):OnChanged(function()
+        SilentAimSettings.VisibleCheck = Toggles.VisibleCheck.Value
+    end)
+    Main:AddDropdown("TargetPart", {AllowNull = true, Text = "Target Part", Default = SilentAimSettings.TargetPart, Values = {"Head", "HumanoidRootPart", "Random"}}):OnChanged(function()
+        SilentAimSettings.TargetPart = Options.TargetPart.Value
+    end)
+    Main:AddDropdown("Method", {AllowNull = true, Text = "Silent Aim Method", Default = SilentAimSettings.SilentAimMethod, Values = {
+        "Raycast","FindPartOnRay",
+        "FindPartOnRayWithWhitelist",
+        "FindPartOnRayWithIgnoreList",
+        "Mouse.Hit/Target"
+    }}):OnChanged(function() 
+        SilentAimSettings.SilentAimMethod = Options.Method.Value 
+    end)
+    Main:AddSlider('HitChance', {
+        Text = 'Hit chance',
+        Default = 100,
+        Min = 0,
+        Max = 100,
+        Rounding = 1,
+    
+        Compact = false,
+    })
+    Options.HitChance:OnChanged(function()
+        SilentAimSettings.HitChance = Options.HitChance.Value
+    end)
+end
 
-			sellPetEvent:FireClient(
-				player,
-				"SUCCESS",
-				info.Name,
-				info.Price
-			)
+local MiscellaneousBOX = GeneralTab:AddLeftTabbox("Miscellaneous")
+local FieldOfViewBOX = GeneralTab:AddLeftTabbox("Field Of View") do
+    local Main = FieldOfViewBOX:AddTab("Visuals")
+    
+    Main:AddToggle("Visible", {Text = "Show FOV Circle"}):AddColorPicker("Color", {Default = Color3.fromRGB(54, 57, 241)}):OnChanged(function()
+        fov_circle.Visible = Toggles.Visible.Value
+        SilentAimSettings.FOVVisible = Toggles.Visible.Value
+    end)
+    Main:AddSlider("Radius", {Text = "FOV Circle Radius", Min = 0, Max = 360, Default = 130, Rounding = 0}):OnChanged(function()
+        fov_circle.Radius = Options.Radius.Value
+        SilentAimSettings.FOVRadius = Options.Radius.Value
+    end)
+    Main:AddToggle("MousePosition", {Text = "Show Silent Aim Target"}):AddColorPicker("MouseVisualizeColor", {Default = Color3.fromRGB(54, 57, 241)}):OnChanged(function()
+        mouse_box.Visible = Toggles.MousePosition.Value 
+        SilentAimSettings.ShowSilentAimTarget = Toggles.MousePosition.Value 
+    end)
+    local PredictionTab = MiscellaneousBOX:AddTab("Prediction")
+    PredictionTab:AddToggle("Prediction", {Text = "Mouse.Hit/Target Prediction"}):OnChanged(function()
+        SilentAimSettings.MouseHitPrediction = Toggles.Prediction.Value
+    end)
+    PredictionTab:AddSlider("Amount", {Text = "Prediction Amount", Min = 0.165, Max = 1, Default = 0.165, Rounding = 3}):OnChanged(function()
+        PredictionAmount = Options.Amount.Value
+        SilentAimSettings.MouseHitPredictionAmount = Options.Amount.Value
+    end)
+end
 
-			return
-		end
-	end
+local CreateConfigurationBOX = GeneralTab:AddRightTabbox("Create Configuration") do 
+    local Main = CreateConfigurationBOX:AddTab("Create Configuration")
+    
+    Main:AddInput("CreateConfigTextBox", {Default = "", Numeric = false, Finished = false, Text = "Create Configuration to Create", Tooltip = "Creates a configuration file containing settings you can save and load", Placeholder = "File Name here"}):OnChanged(function()
+        if Options.CreateConfigTextBox.Value and string.len(Options.CreateConfigTextBox.Value) ~= "" then 
+            FileToSave = Options.CreateConfigTextBox.Value
+        end
+    end)
+    
+    Main:AddButton("Create Configuration File", function()
+        if FileToSave ~= "" or FileToSave ~= nil then 
+            UpdateFile(FileToSave)
+        end
+    end)
+end
 
-	sellPetEvent:FireClient(player, "FAILED", "Hindi makita ang chicken na iyon.")
-end)
+local SaveConfigurationBOX = GeneralTab:AddRightTabbox("Save Configuration") do 
+    local Main = SaveConfigurationBOX:AddTab("Save Configuration")
+    Main:AddDropdown("SaveConfigurationDropdown", {AllowNull = true, Values = GetFiles(), Text = "Choose Configuration to Save"})
+    Main:AddButton("Save Configuration", function()
+        if Options.SaveConfigurationDropdown.Value then 
+            UpdateFile(Options.SaveConfigurationDropdown.Value)
+        end
+    end)
+end
 
--- CLEANUP
-Players.PlayerRemoving:Connect(function(player)
-	if carriedBy == player and carriedEgg then
-		restoreEgg(carriedEgg)
-	end
+local LoadConfigurationBOX = GeneralTab:AddRightTabbox("Load Configuration") do 
+    local Main = LoadConfigurationBOX:AddTab("Load Configuration")
+    
+    Main:AddDropdown("LoadConfigurationDropdown", {AllowNull = true, Values = GetFiles(), Text = "Choose Configuration to Load"})
+    Main:AddButton("Load Configuration", function()
+        if table.find(GetFiles(), Options.LoadConfigurationDropdown.Value) then
+            LoadFile(Options.LoadConfigurationDropdown.Value)
+            
+            Toggles.TeamCheck:SetValue(SilentAimSettings.TeamCheck)
+            Toggles.VisibleCheck:SetValue(SilentAimSettings.VisibleCheck)
+            Options.TargetPart:SetValue(SilentAimSettings.TargetPart)
+            Options.Method:SetValue(SilentAimSettings.SilentAimMethod)
+            Toggles.Visible:SetValue(SilentAimSettings.FOVVisible)
+            Options.Radius:SetValue(SilentAimSettings.FOVRadius)
+            Toggles.MousePosition:SetValue(SilentAimSettings.ShowSilentAimTarget)
+            Toggles.Prediction:SetValue(SilentAimSettings.MouseHitPrediction)
+            Options.Amount:SetValue(SilentAimSettings.MouseHitPredictionAmount)
+            Options.HitChance:SetValue(SilentAimSettings.HitChance)
+        end
+    end)
+end
 
-	if gardenPads[player] then
-		gardenPads[player]:Destroy()
-		gardenPads[player] = nil
-	end
+resume(create(function()
+    RenderStepped:Connect(function()
+        if Toggles.MousePosition.Value and Toggles.aim_Enabled.Value then
+            if getClosestPlayer() then 
+                local Root = getClosestPlayer().Parent.PrimaryPart or getClosestPlayer()
+                local RootToViewportPoint, IsOnScreen = WorldToViewportPoint(Camera, Root.Position);
+                -- using PrimaryPart instead because if your Target Part is "Random" it will flicker the square between the Target's Head and HumanoidRootPart (its annoying)
+                
+                mouse_box.Visible = IsOnScreen
+                mouse_box.Position = Vector2.new(RootToViewportPoint.X, RootToViewportPoint.Y)
+            else 
+                mouse_box.Visible = false 
+                mouse_box.Position = Vector2.new()
+            end
+        end
+        
+        if Toggles.Visible.Value then 
+            fov_circle.Visible = Toggles.Visible.Value
+            fov_circle.Color = Options.Color.Value
+            fov_circle.Position = getMousePosition()
+        end
+    end)
+end))
 
-	local pets = petsByPlayer[player]
-	if pets then
-		for _, pet in ipairs(pets) do
-			pet.Alive = false
-			if pet.Data.Model then
-				pet.Data.Model:Destroy()
-			end
-		end
+-- hooks
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
+    local Method = getnamecallmethod()
+    local Arguments = {...}
+    local self = Arguments[1]
+    local chance = CalculateChance(SilentAimSettings.HitChance)
+    if Toggles.aim_Enabled.Value and self == workspace and not checkcaller() and chance == true then
+        if Method == "FindPartOnRayWithIgnoreList" and Options.Method.Value == Method then
+            if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithIgnoreList) then
+                local A_Ray = Arguments[2]
 
-		petsByPlayer[player] = nil
-	end
+                local HitPart = getClosestPlayer()
+                if HitPart then
+                    local Origin = A_Ray.Origin
+                    local Direction = getDirection(Origin, HitPart.Position)
+                    Arguments[2] = Ray.new(Origin, Direction)
 
-	guardianHitTimes[player] = nil
-	runningPlayers[player] = nil
-	securedPlayers[player] = nil
-end)
+                    return oldNamecall(unpack(Arguments))
+                end
+            end
+        elseif Method == "FindPartOnRayWithWhitelist" and Options.Method.Value == Method then
+            if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithWhitelist) then
+                local A_Ray = Arguments[2]
 
-print("AFX Egg + Chicken + Garden + SELL System Loaded!")
+                local HitPart = getClosestPlayer()
+                if HitPart then
+                    local Origin = A_Ray.Origin
+                    local Direction = getDirection(Origin, HitPart.Position)
+                    Arguments[2] = Ray.new(Origin, Direction)
+
+                    return oldNamecall(unpack(Arguments))
+                end
+            end
+        elseif (Method == "FindPartOnRay" or Method == "findPartOnRay") and Options.Method.Value:lower() == Method:lower() then
+            if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRay) then
+                local A_Ray = Arguments[2]
+
+                local HitPart = getClosestPlayer()
+                if HitPart then
+                    local Origin = A_Ray.Origin
+                    local Direction = getDirection(Origin, HitPart.Position)
+                    Arguments[2] = Ray.new(Origin, Direction)
+
+                    return oldNamecall(unpack(Arguments))
+                end
+            end
+        elseif Method == "Raycast" and Options.Method.Value == Method then
+            if ValidateArguments(Arguments, ExpectedArguments.Raycast) then
+                local A_Origin = Arguments[2]
+
+                local HitPart = getClosestPlayer()
+                if HitPart then
+                    Arguments[3] = getDirection(A_Origin, HitPart.Position)
+
+                    return oldNamecall(unpack(Arguments))
+                end
+            end
+        end
+    end
+    return oldNamecall(...)
+end))
+
+local oldIndex = nil 
+oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, Index)
+    if self == Mouse and not checkcaller() and Toggles.aim_Enabled.Value and Options.Method.Value == "Mouse.Hit/Target" and getClosestPlayer() then
+        local HitPart = getClosestPlayer()
+         
+        if Index == "Target" or Index == "target" then 
+            return HitPart
+        elseif Index == "Hit" or Index == "hit" then 
+            return ((Toggles.Prediction.Value and (HitPart.CFrame + (HitPart.Velocity * PredictionAmount))) or (not Toggles.Prediction.Value and HitPart.CFrame))
+        elseif Index == "X" or Index == "x" then 
+            return self.X 
+        elseif Index == "Y" or Index == "y" then 
+            return self.Y 
+        elseif Index == "UnitRay" then 
+            return Ray.new(self.Origin, (self.Hit - self.Origin).Unit)
+        end
+    end
+
+    return oldIndex(self, Index)
+end))
