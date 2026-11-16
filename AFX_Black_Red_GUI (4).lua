@@ -10,7 +10,7 @@
 local Workspace = game:GetService("Workspace")
 
 local ROOT_NAME = "DesignedShopLoadout"
-local FLOOR_POSITION = Vector3.new(-11, 1.494, -22.26)
+local FLOOR_POSITION = Vector3.new(-11.11, 1.494, -22.26)
 local old = Workspace:FindFirstChild(ROOT_NAME)
 if old then old:Destroy() end
 
