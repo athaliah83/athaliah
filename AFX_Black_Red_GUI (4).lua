@@ -220,66 +220,85 @@ makeBooth("LoadoutShowroom", "LOADOUT", "CHOOSE YOUR DISPLAY SETUP", FLOOR_POSIT
 print("Design-only Shop + Loadout showrooms created near " .. tostring(FLOOR_POSITION))
 
 -- ==========================================================
--- SAFE DESERT + VOLCANO ADD-ON (does not destroy farm trees)
+-- DESERT + VOLCANO (separate folder; does not touch farm trees)
 -- ==========================================================
-
-local DESERT_FOLDER_NAME = "AFX_DesertVolcano"
-local oldDesertFolder = Workspace:FindFirstChild(DESERT_FOLDER_NAME)
-if oldDesertFolder then
-	oldDesertFolder:Destroy()
-end
-
-local desertRoot = Instance.new("Folder")
-desertRoot.Name = DESERT_FOLDER_NAME
-desertRoot.Parent = Workspace
 
 local DESERT_POSITION = Vector3.new(443.068, 1.236, 0.834)
 local DESERT_SIZE = Vector3.new(253.528, 1, 101.283)
 local VOLCANO_SIZE = DESERT_SIZE
+local FOLDER_NAME = "AFX_DesertVolcano"
 
-local function makeGround(parent, name, size, position, color, material)
-	local part = Instance.new("Part")
-	part.Name = name
-	part.Anchored = true
-	part.Size = size
-	part.Position = position
-	part.Color = color
-	part.Material = material
-	part.TopSurface = Enum.SurfaceType.Smooth
-	part.BottomSurface = Enum.SurfaceType.Smooth
-	part.CanCollide = true
-	part.Parent = parent
-	return part
+-- Only this add-on's previous folder is replaced.
+local oldDesertFolder = Workspace:FindFirstChild(FOLDER_NAME)
+if oldDesertFolder then
+	oldDesertFolder:Destroy()
 end
 
-local function makeDecor(parent, name, size, position, color, material, shape, rotation)
-	local part = Instance.new("Part")
-	part.Name = name
-	part.Anchored = true
-	part.Size = size
-	part.Position = position
-	part.Color = color
-	part.Material = material
-	part.Shape = shape or Enum.PartType.Block
-	part.TopSurface = Enum.SurfaceType.Smooth
-	part.BottomSurface = Enum.SurfaceType.Smooth
-	part.CanCollide = false
-	part.CanTouch = false
-	part.CanQuery = false
-	if rotation then
-		part.CFrame = CFrame.new(position) * rotation
-	end
-	part.Parent = parent
-	return part
-end
+local folder = Instance.new("Folder")
+folder.Name = FOLDER_NAME
+folder.Parent = Workspace
 
 local desertTopY = DESERT_POSITION.Y + DESERT_SIZE.Y / 2
 local desertEndZ = DESERT_POSITION.Z + DESERT_SIZE.Z / 2
-local volcanoPosition = Vector3.new(DESERT_POSITION.X, DESERT_POSITION.Y, desertEndZ + VOLCANO_SIZE.Z / 2)
+
+-- Volcano ground is placed immediately after the desert in +Z.
+local volcanoPosition = Vector3.new(
+	DESERT_POSITION.X,
+	DESERT_POSITION.Y,
+	desertEndZ + VOLCANO_SIZE.Z / 2
+)
 local volcanoTopY = volcanoPosition.Y + VOLCANO_SIZE.Y / 2
 
-makeGround(desertRoot, "DesertGround", DESERT_SIZE, DESERT_POSITION, Color3.fromRGB(221, 190, 120), Enum.Material.Sand)
+local function makeGround(name, size, position, color, material)
+	local ground = Instance.new("Part")
+	ground.Name = name
+	ground.Anchored = true
+	ground.Size = size
+	ground.Position = position
+	ground.Color = color
+	ground.Material = material
+	ground.TopSurface = Enum.SurfaceType.Smooth
+	ground.BottomSurface = Enum.SurfaceType.Smooth
+	ground.CanCollide = true
+	ground.Parent = folder
+	return ground
+end
 
+local function makeDecoration(name, size, position, color, material, shape, rotation)
+	local decoration = Instance.new("Part")
+	decoration.Name = name
+	decoration.Anchored = true
+	decoration.Size = size
+	decoration.Position = position
+	decoration.Color = color
+	decoration.Material = material
+	decoration.Shape = shape or Enum.PartType.Block
+	decoration.TopSurface = Enum.SurfaceType.Smooth
+	decoration.BottomSurface = Enum.SurfaceType.Smooth
+
+	-- Decorations only; these do not block the player.
+	decoration.CanCollide = false
+	decoration.CanTouch = false
+	decoration.CanQuery = false
+
+	if rotation then
+		decoration.CFrame = CFrame.new(position) * rotation
+	end
+
+	decoration.Parent = folder
+	return decoration
+end
+
+-- DESERT FLOOR
+makeGround(
+	"DesertGround",
+	DESERT_SIZE,
+	DESERT_POSITION,
+	Color3.fromRGB(221, 190, 120),
+	Enum.Material.Sand
+)
+
+-- DESERT CACTI AND ROCKS
 local cactusOffsets = {
 	{-105, -34},
 	{-72, 12},
@@ -296,24 +315,102 @@ for index, offset in ipairs(cactusOffsets) do
 	local z = DESERT_POSITION.Z + offset[2]
 	local cactusColor = Color3.fromRGB(55, 145, 65)
 
-	makeDecor(desertRoot, "CactusTrunk_" .. index, Vector3.new(1.5, 5, 1.5), Vector3.new(x, desertTopY + 2.5, z), cactusColor, Enum.Material.Grass)
-	makeDecor(desertRoot, "CactusArm_" .. index, Vector3.new(1.2, 2.4, 1.2), Vector3.new(x + 1.1, desertTopY + 3.2, z), cactusColor, Enum.Material.Grass)
-	makeDecor(desertRoot, "CactusArmTop_" .. index, Vector3.new(2.2, 1.2, 1.2), Vector3.new(x + 0.6, desertTopY + 4.3, z), cactusColor, Enum.Material.Grass)
-	makeDecor(desertRoot, "DesertRock_" .. index, Vector3.new(3, 1.5, 2.5), Vector3.new(x - 4, desertTopY + 0.75, z + 4), Color3.fromRGB(145, 119, 87), Enum.Material.Slate)
+	makeDecoration(
+		"CactusTrunk_" .. index,
+		Vector3.new(1.5, 5, 1.5),
+		Vector3.new(x, desertTopY + 2.5, z),
+		cactusColor,
+		Enum.Material.Grass
+	)
+
+	makeDecoration(
+		"CactusArm_" .. index,
+		Vector3.new(1.2, 2.4, 1.2),
+		Vector3.new(x + 1.1, desertTopY + 3.2, z),
+		cactusColor,
+		Enum.Material.Grass
+	)
+
+	makeDecoration(
+		"CactusArmTop_" .. index,
+		Vector3.new(2.2, 1.2, 1.2),
+		Vector3.new(x + 0.6, desertTopY + 4.3, z),
+		cactusColor,
+		Enum.Material.Grass
+	)
+
+	makeDecoration(
+		"DesertRock_" .. index,
+		Vector3.new(3, 1.5, 2.5),
+		Vector3.new(x - 4, desertTopY + 0.75, z + 4),
+		Color3.fromRGB(145, 119, 87),
+		Enum.Material.Slate
+	)
 end
 
-makeGround(desertRoot, "VolcanoGround", VOLCANO_SIZE, volcanoPosition, Color3.fromRGB(75, 65, 60), Enum.Material.Basalt)
+-- VOLCANO FLOOR
+makeGround(
+	"VolcanoGround",
+	VOLCANO_SIZE,
+	volcanoPosition,
+	Color3.fromRGB(75, 65, 60),
+	Enum.Material.Basalt
+)
 
-local verticalCylinder = CFrame.Angles(0, 0, math.rad(90))
+-- VOLCANO DECORATION
 local volcanoCenterX = volcanoPosition.X
 local volcanoCenterZ = volcanoPosition.Z
+local volcanoGroundTopY = volcanoTopY
+local verticalCylinder = CFrame.Angles(0, 0, math.rad(90))
 
-makeDecor(desertRoot, "VolcanoBase", Vector3.new(12, 72, 72), Vector3.new(volcanoCenterX, volcanoTopY + 6, volcanoCenterZ), Color3.fromRGB(75, 48, 42), Enum.Material.Rock, Enum.PartType.Cylinder, verticalCylinder)
-makeDecor(desertRoot, "VolcanoMiddle", Vector3.new(12, 54, 54), Vector3.new(volcanoCenterX, volcanoTopY + 18, volcanoCenterZ), Color3.fromRGB(92, 54, 43), Enum.Material.Rock, Enum.PartType.Cylinder, verticalCylinder)
-makeDecor(desertRoot, "VolcanoTop", Vector3.new(6, 36, 36), Vector3.new(volcanoCenterX, volcanoTopY + 27, volcanoCenterZ), Color3.fromRGB(105, 57, 43), Enum.Material.Rock, Enum.PartType.Cylinder, verticalCylinder)
-makeDecor(desertRoot, "VolcanoCraterRim", Vector3.new(22, 2, 22), Vector3.new(volcanoCenterX, volcanoTopY + 31, volcanoCenterZ), Color3.fromRGB(55, 45, 42), Enum.Material.Slate)
+makeDecoration(
+	"VolcanoBase",
+	Vector3.new(12, 72, 72),
+	Vector3.new(volcanoCenterX, volcanoGroundTopY + 6, volcanoCenterZ),
+	Color3.fromRGB(75, 48, 42),
+	Enum.Material.Rock,
+	Enum.PartType.Cylinder,
+	verticalCylinder
+)
 
-local lava = makeDecor(desertRoot, "VolcanoLava", Vector3.new(13, 0.5, 13), Vector3.new(volcanoCenterX, volcanoTopY + 32.25, volcanoCenterZ), Color3.fromRGB(255, 75, 10), Enum.Material.Neon)
+makeDecoration(
+	"VolcanoMiddle",
+	Vector3.new(12, 54, 54),
+	Vector3.new(volcanoCenterX, volcanoGroundTopY + 18, volcanoCenterZ),
+	Color3.fromRGB(92, 54, 43),
+	Enum.Material.Rock,
+	Enum.PartType.Cylinder,
+	verticalCylinder
+)
+
+makeDecoration(
+	"VolcanoTop",
+	Vector3.new(6, 36, 36),
+	Vector3.new(volcanoCenterX, volcanoGroundTopY + 27, volcanoCenterZ),
+	Color3.fromRGB(105, 57, 43),
+	Enum.Material.Rock,
+	Enum.PartType.Cylinder,
+	verticalCylinder
+)
+
+makeDecoration(
+	"VolcanoCraterRim",
+	Vector3.new(22, 2, 22),
+	Vector3.new(volcanoCenterX, volcanoGroundTopY + 31, volcanoCenterZ),
+	Color3.fromRGB(55, 45, 42),
+	Enum.Material.Slate
+)
+
+local lava = makeDecoration(
+	"VolcanoLava",
+	Vector3.new(13, 0.5, 13),
+	Vector3.new(volcanoCenterX, volcanoGroundTopY + 32.25, volcanoCenterZ),
+	Color3.fromRGB(255, 75, 10),
+	Enum.Material.Neon
+)
 lava.Transparency = 0.1
 
-print("Safe desert + volcano add-on created without touching the farm folder.")
+print("Desert and volcano created.")
+print("Desert position: " .. tostring(DESERT_POSITION))
+print("Desert size: " .. tostring(DESERT_SIZE))
+print("Volcano position: " .. tostring(volcanoPosition))
